@@ -1,30 +1,30 @@
 #!/bin/bash
+set -euo pipefail
 
-# Create unique experiment folder
 RUN_ID=$(date +"%Y%m%d_%H%M%S")
-BASE_DIR="../data/random_$RUN_ID"
+TRACE_COUNT=${1:-100}
+BASE_DIR="$(dirname "$0")/../data/random_$RUN_ID"
+TARGET_SCRIPT="$(dirname "$0")/../target/target.py"
 
 mkdir -p "$BASE_DIR"
 
 echo "====================================="
 echo "Collecting RANDOM traces"
+echo "Trace count: $TRACE_COUNT"
 echo "Saving to: $BASE_DIR"
 echo "====================================="
 
-for i in {1..100}
+for i in $(seq 1 "$TRACE_COUNT")
 do
-  echo "Random Trace $i"
+  echo "Random Trace $i/$TRACE_COUNT"
 
-  # Generate random input
   INPUT=$(openssl rand -hex 16)
-
-  # Save input for reproducibility
   echo "$INPUT" >> "$BASE_DIR/inputs.txt"
 
   sudo powermetrics --samplers cpu_power -i 10 -n 50 > "$BASE_DIR/trace_$i.txt" &
   PID=$!
 
-  python3 ../target/target.py "$INPUT"
+  python3 "$TARGET_SCRIPT" "$INPUT"
 
   wait $PID
 done
