@@ -18,15 +18,21 @@ pip install -r requirements.txt
 Run these on macOS with `powermetrics` permissions.
 
 ```bash
-./scripts/collect_fixed.sh 1000 50
-./scripts/collect_random.sh 1000 50
+./scripts/collect_fixed.sh 1000 200 100ms
+./scripts/collect_random.sh 1000 200 100ms
 ```
 
 - First optional argument is trace count (default `100`).
 - Second optional argument is samples per trace passed to `powermetrics -n` (default `50`).
+- Third optional argument is sampling interval for `powermetrics -i` (default `100ms`).
 - Data is saved in:
   - `data/fixed_<timestamp>/`
   - `data/random_<timestamp>/`
+  - Each run also saves `collection_config.txt` with the exact collection parameters.
+
+High-resolution tip:
+- Lower `-i` (for example `100ms`) gives finer time resolution.
+- Increase `-n` accordingly so each trace still covers enough runtime window.
 
 ## 3) Analyze and apply filters
 
@@ -73,6 +79,8 @@ Inside that folder:
   - `random_filters.png`
   - `raw_comparison.png`
   - `trace_means_all_traces.png` (shows all traces, e.g. all 1000 points)
+  - `migration_events_per_trace.png`
+  - `tstat_vs_migration_density.png` (for leakage-vs-migration interpretation)
 - `summary.json`
 
 ## 5) Filter details
@@ -81,7 +89,28 @@ Inside that folder:
 - **Median filter**: robust against outlier samples.
 - **Low-pass Butterworth**: removes high-frequency noise.
 
-## 6) How to do the t-test (step by step)
+## 6) Task migration detection
+
+The analyzer now includes a heuristic detector for migration-like events:
+- It computes first-derivative jumps (`diff(trace)`).
+- It marks large robust outliers using a MAD-based z-score threshold.
+- It reports candidate events per trace into `raw/migration_events.csv`.
+- It builds migration density by sample index:
+  - `raw/fixed_migration_density_by_sample.csv`
+  - `raw/random_migration_density_by_sample.csv`
+- It overlays `|t-stat|` with migration density in:
+  - `plots/tstat_vs_migration_density.png`
+
+This is a signal-level heuristic (not scheduler ground truth), useful for
+flagging traces likely to contain task migration or abrupt execution changes.
+
+Leakage interpretation tip:
+- If `|t|` spikes align strongly with migration-density spikes, the signal may be
+  migration-confounded.
+- If `|t|` remains high where migration density is low, leakage is more plausible.
+- See `summary.json` → `migration_vs_tstat_interpretation.overlap_stats`.
+
+## 7) How to do the t-test (step by step)
 
 After running:
 
@@ -107,7 +136,7 @@ Interpretation:
 - If you collect `1000` traces, `fixed_trace_summary.csv` and
   `random_trace_summary.csv` should each contain `1000` rows (plus header).
 
-## 7) Research-friendly step-by-step use
+## 8) Research-friendly step-by-step use
 
 1. Collect fixed traces.
 2. Collect random traces.
@@ -116,4 +145,10 @@ Interpretation:
 5. Inspect all-trace files: `raw/fixed_trace_summary.csv`, `raw/random_trace_summary.csv`,
    and `plots/trace_means_all_traces.png`.
 6. Inspect filter-specific CSVs in `filtered/fixed/` and `filtered/random/`.
-7. Report Welch t-test values from `summary.json` and point-wise t-test files.
+7. Inspect migration candidates:
+   - `raw/migration_events.csv` (event index + power jump per trace)
+   - `plots/migration_events_per_trace.png`
+   - `summary.json` → `task_migration_detection`
+   - `plots/tstat_vs_migration_density.png`
+   - `summary.json` → `migration_vs_tstat_interpretation`
+8. Report Welch t-test values and migration overlap summary from `summary.json`.

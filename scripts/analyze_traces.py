@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Analyze power traces for fixed vs random TVLA-style experiments.
 
 This script parses powermetrics outputs, applies multiple filters, and saves
@@ -146,6 +145,78 @@ def save_trace_summary(path: Path, traces: list[np.ndarray], label: str) -> None
             )
 
 
+def detect_migration_events(
+    trace: np.ndarray, z_threshold: float = 3.5, min_gap: int = 2
+) -> list[tuple[int, float]]:
+    """
+    Heuristic migration detector using large first-derivative spikes.
+
+    Returns a list of (sample_index, delta_mw) candidate events.
+    """
+    if len(trace) < 3:
+        return []
+
+    diffs = np.diff(trace)
+    mad = np.median(np.abs(diffs - np.median(diffs)))
+    robust_scale = 1.4826 * mad if mad > 0 else np.std(diffs)
+    if robust_scale == 0:
+        return []
+
+    z = np.abs(diffs) / robust_scale
+    candidate_idxs = np.where(z >= z_threshold)[0] + 1
+    if len(candidate_idxs) == 0:
+        return []
+
+    merged: list[int] = [int(candidate_idxs[0])]
+    for idx in candidate_idxs[1:]:
+        if int(idx) - merged[-1] > min_gap:
+            merged.append(int(idx))
+
+    return [(idx, float(trace[idx] - trace[idx - 1])) for idx in merged]
+
+
+def save_migration_report(
+    path: Path,
+    fixed_traces: np.ndarray,
+    random_traces: np.ndarray,
+    z_threshold: float,
+) -> dict[str, object]:
+    """
+    Save per-trace migration candidates for both classes.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fixed_counts: list[int] = []
+    random_counts: list[int] = []
+
+    with path.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["label", "trace_index", "event_index", "delta_mw"])
+
+        for label, traces, counts in (
+            ("fixed", fixed_traces, fixed_counts),
+            ("random", random_traces, random_counts),
+        ):
+            for trace_idx, trace in enumerate(traces):
+                events = detect_migration_events(trace, z_threshold=z_threshold)
+                counts.append(len(events))
+                for event_idx, delta in events:
+                    writer.writerow([label, trace_idx, event_idx, delta])
+
+    def stats(values: list[int]) -> dict[str, float]:
+        arr = np.array(values, dtype=float)
+        return {
+            "mean_events_per_trace": float(arr.mean()) if len(arr) else 0.0,
+            "max_events_in_single_trace": float(arr.max()) if len(arr) else 0.0,
+            "traces_with_any_event": int(np.sum(arr > 0)) if len(arr) else 0,
+        }
+
+    return {
+        "z_threshold": z_threshold,
+        "fixed": stats(fixed_counts),
+        "random": stats(random_counts),
+    }
+
+
 
 def plot_signals(path: Path, title: str, series: dict[str, np.ndarray]) -> None:
     plt.figure(figsize=(10, 5))
@@ -174,6 +245,101 @@ def plot_trace_means(path: Path, fixed_means: np.ndarray, random_means: np.ndarr
     path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(path, dpi=150)
     plt.close()
+
+
+def plot_migration_counts(path: Path, fixed_traces: np.ndarray, random_traces: np.ndarray) -> None:
+    fixed_counts = [len(detect_migration_events(t)) for t in fixed_traces]
+    random_counts = [len(detect_migration_events(t)) for t in random_traces]
+
+    plt.figure(figsize=(11, 5))
+    plt.plot(fixed_counts, ".", alpha=0.7, label=f"fixed ({len(fixed_counts)} traces)")
+    plt.plot(random_counts, ".", alpha=0.7, label=f"random ({len(random_counts)} traces)")
+    plt.title("Detected migration-like events per trace")
+    plt.xlabel("Trace index")
+    plt.ylabel("Event count")
+    plt.legend()
+    plt.tight_layout()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(path, dpi=150)
+    plt.close()
+
+
+def migration_density_by_sample(traces: np.ndarray, z_threshold: float = 3.5) -> np.ndarray:
+    """
+    For each sample index, count how many traces have a migration-like event at that index.
+    """
+    if traces.size == 0:
+        return np.array([], dtype=float)
+    density = np.zeros(traces.shape[1], dtype=float)
+    for t in traces:
+        for idx, _ in detect_migration_events(t, z_threshold=z_threshold):
+            if 0 <= idx < len(density):
+                density[idx] += 1.0
+    return density
+
+
+def plot_tstat_vs_migration(
+    path: Path,
+    t_stat: np.ndarray,
+    fixed_density: np.ndarray,
+    random_density: np.ndarray,
+    t_threshold: float = 4.5,
+) -> None:
+    """
+    Overlay leakage indicator (|t|) with migration density to interpret confounding.
+    """
+    x = np.arange(len(t_stat))
+    combined_density = fixed_density + random_density
+    # Normalize to [0, 1] for visual comparison with |t|
+    norm_density = combined_density / combined_density.max() if combined_density.max() > 0 else combined_density
+
+    fig, ax1 = plt.subplots(figsize=(11, 5))
+    ax1.plot(x, np.abs(t_stat), label="|t-stat|", color="tab:blue")
+    ax1.axhline(t_threshold, linestyle="--", color="tab:red", label=f"TVLA threshold {t_threshold}")
+    ax1.set_xlabel("Sample index")
+    ax1.set_ylabel("|t-stat|")
+
+    ax2 = ax1.twinx()
+    ax2.plot(x, norm_density, color="tab:orange", alpha=0.8, label="Migration density (normalized)")
+    ax2.set_ylabel("Normalized migration density")
+
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper right")
+    plt.title("Leakage indicator vs migration activity")
+    plt.tight_layout()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+def migration_leakage_overlap_score(
+    pointwise_t: np.ndarray, fixed_density: np.ndarray, random_density: np.ndarray, t_threshold: float = 4.5
+) -> dict[str, float]:
+    """
+    Quantify overlap between high-|t| points and high migration-activity points.
+    """
+    abs_t = np.abs(pointwise_t)
+    high_t_mask = abs_t >= t_threshold
+    combined_density = fixed_density + random_density
+    high_migration_mask = (
+        combined_density >= np.percentile(combined_density, 75)
+        if len(combined_density)
+        else np.zeros_like(abs_t, dtype=bool)
+    )
+
+    if len(abs_t) == 0:
+        return {"high_t_points": 0.0, "overlap_points": 0.0, "overlap_ratio": 0.0}
+
+    overlap = np.logical_and(high_t_mask, high_migration_mask)
+    high_t_points = int(np.sum(high_t_mask))
+    overlap_points = int(np.sum(overlap))
+    overlap_ratio = float(overlap_points / high_t_points) if high_t_points else 0.0
+    return {
+        "high_t_points": float(high_t_points),
+        "overlap_points": float(overlap_points),
+        "overlap_ratio": overlap_ratio,
+    }
 
 
 
@@ -258,6 +424,7 @@ def main() -> None:
         {"fixed_raw": fixed_filtered["raw"], "random_raw": random_filtered["raw"]},
     )
     plot_trace_means(out / "plots" / "trace_means_all_traces.png", fixed_means, random_means)
+    plot_migration_counts(out / "plots" / "migration_events_per_trace.png", fixed_aligned, random_aligned)
 
     # Welch t-test on per-trace means (overall summary)
     t_stat, p_value = ttest_ind(fixed_means, random_means, equal_var=False)
@@ -274,6 +441,29 @@ def main() -> None:
 
     tvla_threshold = 4.5
     exceed_count = int(np.sum(np.abs(pointwise_t) >= tvla_threshold))
+    fixed_mig_density = migration_density_by_sample(fixed_aligned, z_threshold=3.5)
+    random_mig_density = migration_density_by_sample(random_aligned, z_threshold=3.5)
+    save_csv(out / "raw" / "fixed_migration_density_by_sample.csv", fixed_mig_density, "event_count")
+    save_csv(out / "raw" / "random_migration_density_by_sample.csv", random_mig_density, "event_count")
+    plot_tstat_vs_migration(
+        out / "plots" / "tstat_vs_migration_density.png",
+        pointwise_t,
+        fixed_mig_density,
+        random_mig_density,
+        t_threshold=tvla_threshold,
+    )
+    overlap_stats = migration_leakage_overlap_score(
+        pointwise_t,
+        fixed_mig_density,
+        random_mig_density,
+        t_threshold=tvla_threshold,
+    )
+    migration_summary = save_migration_report(
+        out / "raw" / "migration_events.csv",
+        fixed_aligned,
+        random_aligned,
+        z_threshold=3.5,
+    )
     summary = {
         "fixed_dir": str(fixed_dir),
         "random_dir": str(random_dir),
@@ -294,6 +484,14 @@ def main() -> None:
             "sample_count": int(common_len),
             "threshold_abs_t": tvla_threshold,
             "samples_exceeding_threshold": exceed_count,
+        },
+        "task_migration_detection": migration_summary,
+        "migration_vs_tstat_interpretation": {
+            "overlap_stats": overlap_stats,
+            "rule_of_thumb": (
+                "High overlap_ratio suggests t-stat peaks may be influenced by migration-related transients; "
+                "low overlap_ratio suggests leakage-like effects are less correlated with migration events."
+            ),
         },
     }
     (out / "summary.json").write_text(json.dumps(summary, indent=2))
