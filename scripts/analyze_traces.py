@@ -75,6 +75,12 @@ def average_trace(traces: list[np.ndarray]) -> np.ndarray:
     return aligned.mean(axis=0)
 
 
+def align_traces(traces: list[np.ndarray]) -> np.ndarray:
+    """Trim traces to a common length and stack into a 2D array."""
+    min_len = min(len(t) for t in traces)
+    return np.array([t[:min_len] for t in traces], dtype=float)
+
+
 
 def moving_average(signal: np.ndarray, window: int = 5) -> np.ndarray:
     if window <= 1:
@@ -109,6 +115,37 @@ def save_csv(path: Path, values: Iterable[float], header: str) -> None:
             writer.writerow([i, float(v)])
 
 
+def save_trace_matrix(path: Path, matrix: np.ndarray) -> None:
+    """Save one row per trace so all collected traces are preserved in output."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="") as f:
+        writer = csv.writer(f)
+        header = ["trace_index"] + [f"sample_{i}" for i in range(matrix.shape[1])]
+        writer.writerow(header)
+        for idx, row in enumerate(matrix):
+            writer.writerow([idx] + [float(x) for x in row])
+
+
+def save_trace_summary(path: Path, traces: list[np.ndarray], label: str) -> None:
+    """Save per-trace descriptive stats (one output row per trace)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["trace_index", "label", "num_samples", "mean_mw", "std_mw", "min_mw", "max_mw"])
+        for idx, t in enumerate(traces):
+            writer.writerow(
+                [
+                    idx,
+                    label,
+                    len(t),
+                    float(np.mean(t)),
+                    float(np.std(t)),
+                    float(np.min(t)),
+                    float(np.max(t)),
+                ]
+            )
+
+
 
 def plot_signals(path: Path, title: str, series: dict[str, np.ndarray]) -> None:
     plt.figure(figsize=(10, 5))
@@ -117,6 +154,21 @@ def plot_signals(path: Path, title: str, series: dict[str, np.ndarray]) -> None:
     plt.title(title)
     plt.xlabel("Sample index")
     plt.ylabel("Power (mW)")
+    plt.legend()
+    plt.tight_layout()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(path, dpi=150)
+    plt.close()
+
+
+def plot_trace_means(path: Path, fixed_means: np.ndarray, random_means: np.ndarray) -> None:
+    """Plot one point per trace so user can inspect all traces (e.g., 1000 points)."""
+    plt.figure(figsize=(11, 5))
+    plt.plot(fixed_means, ".", alpha=0.7, label=f"fixed ({len(fixed_means)} traces)")
+    plt.plot(random_means, ".", alpha=0.7, label=f"random ({len(random_means)} traces)")
+    plt.title("Per-trace mean power (all collected traces)")
+    plt.xlabel("Trace index")
+    plt.ylabel("Mean power (mW)")
     plt.legend()
     plt.tight_layout()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -163,8 +215,15 @@ def main() -> None:
     fixed = load_experiment(fixed_dir, "fixed")
     random = load_experiment(random_dir, "random")
 
-    fixed_avg = average_trace(fixed.traces)
-    random_avg = average_trace(random.traces)
+    fixed_aligned = align_traces(fixed.traces)
+    random_aligned = align_traces(random.traces)
+
+    common_len = min(fixed_aligned.shape[1], random_aligned.shape[1])
+    fixed_aligned = fixed_aligned[:, :common_len]
+    random_aligned = random_aligned[:, :common_len]
+
+    fixed_avg = fixed_aligned.mean(axis=0)
+    random_avg = random_aligned.mean(axis=0)
 
     fixed_filtered = apply_filters(fixed_avg)
     random_filtered = apply_filters(random_avg)
@@ -177,6 +236,10 @@ def main() -> None:
     random_means = trace_means(random.traces)
     save_csv(out / "raw" / "fixed_trace_means.csv", fixed_means, "power_mw")
     save_csv(out / "raw" / "random_trace_means.csv", random_means, "power_mw")
+    save_trace_summary(out / "raw" / "fixed_trace_summary.csv", fixed.traces, "fixed")
+    save_trace_summary(out / "raw" / "random_trace_summary.csv", random.traces, "random")
+    save_trace_matrix(out / "raw" / "fixed_traces_aligned.csv", fixed_aligned)
+    save_trace_matrix(out / "raw" / "random_traces_aligned.csv", random_aligned)
 
     # Save each filtered signal separately
     for name, arr in fixed_filtered.items():
@@ -194,13 +257,31 @@ def main() -> None:
         "Raw average comparison",
         {"fixed_raw": fixed_filtered["raw"], "random_raw": random_filtered["raw"]},
     )
+    plot_trace_means(out / "plots" / "trace_means_all_traces.png", fixed_means, random_means)
 
-    # TVLA-style Welch t-test on per-trace means
+    # Welch t-test on per-trace means (overall summary)
     t_stat, p_value = ttest_ind(fixed_means, random_means, equal_var=False)
+
+    # TVLA-style point-wise Welch t-test across aligned trace samples
+    pointwise_t, pointwise_p = ttest_ind(fixed_aligned, random_aligned, axis=0, equal_var=False)
+    save_csv(out / "raw" / "pointwise_t_stat.csv", pointwise_t, "t_stat")
+    save_csv(out / "raw" / "pointwise_p_value.csv", pointwise_p, "p_value")
+    plot_signals(
+        out / "plots" / "pointwise_t_stat.png",
+        "Point-wise Welch t-statistic (fixed vs random)",
+        {"t_stat": pointwise_t},
+    )
+
+    tvla_threshold = 4.5
+    exceed_count = int(np.sum(np.abs(pointwise_t) >= tvla_threshold))
     summary = {
         "fixed_dir": str(fixed_dir),
         "random_dir": str(random_dir),
         "trace_counts": {"fixed": len(fixed.traces), "random": len(random.traces)},
+        "notes": {
+            "trace_count_meaning": "Number of files parsed (trace_*.txt).",
+            "sample_count_meaning": "Number of power samples inside each trace after alignment.",
+        },
         "mean_power_mw": {
             "fixed": float(fixed_means.mean()),
             "random": float(random_means.mean()),
@@ -208,6 +289,11 @@ def main() -> None:
         "welch_t_test_on_trace_means": {
             "t_stat": float(t_stat),
             "p_value": float(p_value),
+        },
+        "welch_t_test_pointwise": {
+            "sample_count": int(common_len),
+            "threshold_abs_t": tvla_threshold,
+            "samples_exceeding_threshold": exceed_count,
         },
     }
     (out / "summary.json").write_text(json.dumps(summary, indent=2))

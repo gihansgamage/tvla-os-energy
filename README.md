@@ -18,11 +18,12 @@ pip install -r requirements.txt
 Run these on macOS with `powermetrics` permissions.
 
 ```bash
-./scripts/collect_fixed.sh 100
-./scripts/collect_random.sh 100
+./scripts/collect_fixed.sh 1000 50
+./scripts/collect_random.sh 1000 50
 ```
 
-- The optional argument is trace count (default `100`).
+- First optional argument is trace count (default `100`).
+- Second optional argument is samples per trace passed to `powermetrics -n` (default `50`).
 - Data is saved in:
   - `data/fixed_<timestamp>/`
   - `data/random_<timestamp>/`
@@ -53,6 +54,10 @@ Inside that folder:
 - `raw/`
   - `fixed_trace_means.csv`
   - `random_trace_means.csv`
+  - `fixed_trace_summary.csv` (one row per fixed trace)
+  - `random_trace_summary.csv` (one row per random trace)
+  - `fixed_traces_aligned.csv` (all fixed traces, one row per trace)
+  - `random_traces_aligned.csv` (all random traces, one row per trace)
 - `filtered/fixed/`
   - `raw.csv`
   - `moving_average.csv`
@@ -67,6 +72,7 @@ Inside that folder:
   - `fixed_filters.png`
   - `random_filters.png`
   - `raw_comparison.png`
+  - `trace_means_all_traces.png` (shows all traces, e.g. all 1000 points)
 - `summary.json`
 
 ## 5) Filter details
@@ -75,11 +81,39 @@ Inside that folder:
 - **Median filter**: robust against outlier samples.
 - **Low-pass Butterworth**: removes high-frequency noise.
 
-## 6) Research-friendly step-by-step use
+## 6) How to do the t-test (step by step)
+
+After running:
+
+```bash
+python3 scripts/analyze_traces.py
+```
+
+check these files in the latest `results/analysis_<timestamp>/`:
+
+1. **Overall Welch t-test** (single statistic on per-trace means):
+   - `summary.json` → `welch_t_test_on_trace_means`
+2. **Point-wise Welch t-test** (TVLA style across time samples):
+   - `raw/pointwise_t_stat.csv`
+   - `raw/pointwise_p_value.csv`
+   - `plots/pointwise_t_stat.png`
+3. **Threshold check**:
+   - `summary.json` → `welch_t_test_pointwise.samples_exceeding_threshold`
+   - default threshold is `|t| >= 4.5`
+
+Interpretation:
+- If many points exceed `|t| >= 4.5`, fixed/random traces are likely distinguishable.
+- If almost none exceed the threshold, leakage evidence is weaker.
+- If you collect `1000` traces, `fixed_trace_summary.csv` and
+  `random_trace_summary.csv` should each contain `1000` rows (plus header).
+
+## 7) Research-friendly step-by-step use
 
 1. Collect fixed traces.
 2. Collect random traces.
 3. Run analysis script.
 4. Compare `plots/raw_comparison.png`.
-5. Inspect filter-specific CSVs in `filtered/fixed/` and `filtered/random/`.
-6. Report Welch t-test from `summary.json`.
+5. Inspect all-trace files: `raw/fixed_trace_summary.csv`, `raw/random_trace_summary.csv`,
+   and `plots/trace_means_all_traces.png`.
+6. Inspect filter-specific CSVs in `filtered/fixed/` and `filtered/random/`.
+7. Report Welch t-test values from `summary.json` and point-wise t-test files.
