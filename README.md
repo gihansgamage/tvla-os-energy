@@ -73,6 +73,7 @@ Inside that folder:
   - `random_filters.png`
   - `raw_comparison.png`
   - `trace_means_all_traces.png` (shows all traces, e.g. all 1000 points)
+  - `migration_events_per_trace.png`
 - `summary.json`
 
 ## 5) Filter details
@@ -81,7 +82,17 @@ Inside that folder:
 - **Median filter**: robust against outlier samples.
 - **Low-pass Butterworth**: removes high-frequency noise.
 
-## 6) How to do the t-test (step by step)
+## 6) Task migration detection
+
+The analyzer now includes a heuristic detector for migration-like events:
+- It computes first-derivative jumps (`diff(trace)`).
+- It marks large robust outliers using a MAD-based z-score threshold.
+- It reports candidate events per trace into `raw/migration_events.csv`.
+
+This is a signal-level heuristic (not scheduler ground truth), useful for
+flagging traces likely to contain task migration or abrupt execution changes.
+
+## 7) How to do the t-test (step by step)
 
 After running:
 
@@ -107,7 +118,7 @@ Interpretation:
 - If you collect `1000` traces, `fixed_trace_summary.csv` and
   `random_trace_summary.csv` should each contain `1000` rows (plus header).
 
-## 7) Research-friendly step-by-step use
+## 8) Research-friendly step-by-step use
 
 1. Collect fixed traces.
 2. Collect random traces.
@@ -116,4 +127,8 @@ Interpretation:
 5. Inspect all-trace files: `raw/fixed_trace_summary.csv`, `raw/random_trace_summary.csv`,
    and `plots/trace_means_all_traces.png`.
 6. Inspect filter-specific CSVs in `filtered/fixed/` and `filtered/random/`.
-7. Report Welch t-test values from `summary.json` and point-wise t-test files.
+7. Inspect migration candidates:
+   - `raw/migration_events.csv` (event index + power jump per trace)
+   - `plots/migration_events_per_trace.png`
+   - `summary.json` → `task_migration_detection`
+8. Report Welch t-test values and migration summary from `summary.json`.
