@@ -3,7 +3,7 @@ set -euo pipefail
 
 RUN_ID=$(date +"%Y%m%d_%H%M%S")
 TRACE_COUNT=${1:-100}
-SAMPLES_PER_TRACE=${2:-50}
+SAMPLES_PER_TRACE=${2:-100}
 BASE_DIR="$(dirname "$0")/../data/random_$RUN_ID"
 TARGET_SCRIPT="$(dirname "$0")/../target/target.py"
 

@@ -247,6 +247,39 @@ def plot_trace_means(path: Path, fixed_means: np.ndarray, random_means: np.ndarr
     plt.close()
 
 
+def plot_all_traces(path: Path, title: str, traces: np.ndarray, color: str) -> None:
+    """Plot every aligned trace as a semi-transparent line."""
+    plt.figure(figsize=(11, 5))
+    for trace in traces:
+        plt.plot(trace, color=color, alpha=0.5, linewidth=0.8)
+    plt.title(f"{title} (all {len(traces)} traces)")
+    plt.xlabel("Sample index")
+    plt.ylabel("Power (mW)")
+    plt.tight_layout()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(path, dpi=150)
+    plt.close()
+
+
+def plot_all_traces_comparison(path: Path, fixed_traces: np.ndarray, random_traces: np.ndarray) -> None:
+    """Overlay every fixed/random trace so plots include all collected traces."""
+    plt.figure(figsize=(11, 5))
+    for trace in fixed_traces:
+        plt.plot(trace, color="tab:blue", alpha=0.2, linewidth=0.7)
+    for trace in random_traces:
+        plt.plot(trace, color="tab:orange", alpha=0.2, linewidth=0.7)
+    plt.plot([], [], color="tab:blue", label=f"fixed ({len(fixed_traces)} traces)")
+    plt.plot([], [], color="tab:orange", label=f"random ({len(random_traces)} traces)")
+    plt.title("All aligned traces overlay")
+    plt.xlabel("Sample index")
+    plt.ylabel("Power (mW)")
+    plt.legend()
+    plt.tight_layout()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(path, dpi=150)
+    plt.close()
+
+
 def plot_migration_counts(path: Path, fixed_traces: np.ndarray, random_traces: np.ndarray) -> None:
     fixed_counts = [len(detect_migration_events(t)) for t in fixed_traces]
     random_counts = [len(detect_migration_events(t)) for t in random_traces]
@@ -422,6 +455,21 @@ def main() -> None:
         out / "plots" / "raw_comparison.png",
         "Raw average comparison",
         {"fixed_raw": fixed_filtered["raw"], "random_raw": random_filtered["raw"]},
+    )
+    plot_all_traces(
+        out / "plots" / "fixed_all_traces_overlay.png",
+        "Fixed aligned traces overlay",
+        fixed_aligned,
+        color="tab:blue",
+    )
+    plot_all_traces(
+        out / "plots" / "random_all_traces_overlay.png",
+        "Random aligned traces overlay",
+        random_aligned,
+        color="tab:orange",
+    )
+    plot_all_traces_comparison(
+        out / "plots" / "all_traces_overlay_comparison.png", fixed_aligned, random_aligned
     )
     plot_trace_means(out / "plots" / "trace_means_all_traces.png", fixed_means, random_means)
     plot_migration_counts(out / "plots" / "migration_events_per_trace.png", fixed_aligned, random_aligned)
