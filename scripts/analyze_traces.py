@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -146,7 +146,7 @@ def save_trace_summary(path: Path, traces: list[np.ndarray], label: str) -> None
 
 
 def detect_migration_events(
-    trace: np.ndarray, z_threshold: float = 3.5, min_gap: int = 2
+        trace: np.ndarray, z_threshold: float = 3.5, min_gap: int = 2
 ) -> list[tuple[int, float]]:
     """
     Heuristic migration detector using large first-derivative spikes.
@@ -176,10 +176,10 @@ def detect_migration_events(
 
 
 def save_migration_report(
-    path: Path,
-    fixed_traces: np.ndarray,
-    random_traces: np.ndarray,
-    z_threshold: float,
+        path: Path,
+        fixed_traces: np.ndarray,
+        random_traces: np.ndarray,
+        z_threshold: float,
 ) -> dict[str, object]:
     """
     Save per-trace migration candidates for both classes.
@@ -193,8 +193,8 @@ def save_migration_report(
         writer.writerow(["label", "trace_index", "event_index", "delta_mw"])
 
         for label, traces, counts in (
-            ("fixed", fixed_traces, fixed_counts),
-            ("random", random_traces, random_counts),
+                ("fixed", fixed_traces, fixed_counts),
+                ("random", random_traces, random_counts),
         ):
             for trace_idx, trace in enumerate(traces):
                 events = detect_migration_events(trace, z_threshold=z_threshold)
@@ -240,6 +240,71 @@ def plot_trace_means(path: Path, fixed_means: np.ndarray, random_means: np.ndarr
     plt.title("Per-trace mean power (all collected traces)")
     plt.xlabel("Trace index")
     plt.ylabel("Mean power (mW)")
+    plt.legend()
+    plt.tight_layout()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(path, dpi=150)
+    plt.close()
+
+
+def frequency_spectrum(
+        signal: np.ndarray, sample_interval: float = 1.0
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Return one-sided FFT frequency bins and magnitude spectrum.
+
+    Frequency is reported in 1/sample_interval units (e.g., Hz when in seconds).
+    """
+    if sample_interval <= 0:
+        raise ValueError("sample_interval must be > 0")
+    centered = signal - np.mean(signal)
+    spectrum = np.fft.rfft(centered)
+    freqs = np.fft.rfftfreq(len(centered), d=sample_interval)
+    magnitude = np.abs(spectrum)
+    return freqs, magnitude
+
+
+def frequency_axis_label(sample_interval: float) -> str:
+    if np.isclose(sample_interval, 1.0):
+        return "Frequency (cycles/sample)"
+    return "Frequency (Hz)"
+
+
+def plot_frequency_spectrum(
+        path: Path,
+        title: str,
+        signal: np.ndarray,
+        sample_interval: float = 1.0,
+        color: str = "tab:blue",
+) -> None:
+    freqs, mag = frequency_spectrum(signal, sample_interval=sample_interval)
+    plt.figure(figsize=(11, 5))
+    plt.plot(freqs, mag, color=color)
+    plt.title(title)
+    plt.xlabel(frequency_axis_label(sample_interval))
+    plt.ylabel("Magnitude")
+    plt.tight_layout()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(path, dpi=150)
+    plt.close()
+
+
+def plot_frequency_comparison(
+        path: Path,
+        fixed_signal: np.ndarray,
+        random_signal: np.ndarray,
+        sample_interval: float = 1.0,
+) -> None:
+    """Compare fixed/random spectra to visualize dominant frequency components."""
+    fixed_freqs, fixed_mag = frequency_spectrum(fixed_signal, sample_interval=sample_interval)
+    random_freqs, random_mag = frequency_spectrum(random_signal, sample_interval=sample_interval)
+
+    plt.figure(figsize=(11, 5))
+    plt.plot(fixed_freqs, fixed_mag, label="fixed")
+    plt.plot(random_freqs, random_mag, label="random")
+    plt.title("Frequency-domain comparison (FFT magnitude)")
+    plt.xlabel(frequency_axis_label(sample_interval))
+    plt.ylabel("Magnitude")
     plt.legend()
     plt.tight_layout()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -312,11 +377,11 @@ def migration_density_by_sample(traces: np.ndarray, z_threshold: float = 3.5) ->
 
 
 def plot_tstat_vs_migration(
-    path: Path,
-    t_stat: np.ndarray,
-    fixed_density: np.ndarray,
-    random_density: np.ndarray,
-    t_threshold: float = 4.5,
+        path: Path,
+        t_stat: np.ndarray,
+        fixed_density: np.ndarray,
+        random_density: np.ndarray,
+        t_threshold: float = 4.5,
 ) -> None:
     """
     Overlay leakage indicator (|t|) with migration density to interpret confounding.
@@ -347,7 +412,7 @@ def plot_tstat_vs_migration(
 
 
 def migration_leakage_overlap_score(
-    pointwise_t: np.ndarray, fixed_density: np.ndarray, random_density: np.ndarray, t_threshold: float = 4.5
+        pointwise_t: np.ndarray, fixed_density: np.ndarray, random_density: np.ndarray, t_threshold: float = 4.5
 ) -> dict[str, float]:
     """
     Quantify overlap between high-|t| points and high migration-activity points.
@@ -399,6 +464,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--random-dir", type=Path, help="Directory with random traces")
     p.add_argument("--data-root", type=Path, default=Path("data"))
     p.add_argument("--results-root", type=Path, default=Path("results"))
+    p.add_argument(
+        "--sample-interval",
+        type=float,
+        default=1.0,
+        help=(
+            "Sampling interval between adjacent power samples. "
+            "Use seconds if you want frequency output in Hz."
+        ),
+    )
     return p
 
 
@@ -446,6 +520,18 @@ def main() -> None:
     for name, arr in random_filtered.items():
         save_csv(out / "filtered" / "random" / f"{name}.csv", arr, "power_mw")
 
+    fixed_freqs, fixed_mag = frequency_spectrum(
+        fixed_filtered["raw"], sample_interval=args.sample_interval
+    )
+    random_freqs, random_mag = frequency_spectrum(
+        random_filtered["raw"], sample_interval=args.sample_interval
+    )
+    freq_header = "frequency_hz" if not np.isclose(args.sample_interval, 1.0) else "cycles_per_sample"
+    save_csv(out / "raw" / "fixed_frequency_bins.csv", fixed_freqs, freq_header)
+    save_csv(out / "raw" / "fixed_fft_magnitude.csv", fixed_mag, "magnitude")
+    save_csv(out / "raw" / "random_frequency_bins.csv", random_freqs, freq_header)
+    save_csv(out / "raw" / "random_fft_magnitude.csv", random_mag, "magnitude")
+
     # Save figures (shown separately + combined)
     plot_signals(out / "plots" / "fixed_filters.png", "Fixed traces: raw vs filters", fixed_filtered)
     plot_signals(
@@ -455,19 +541,39 @@ def main() -> None:
         out / "plots" / "raw_comparison.png",
         "Raw average comparison",
         {"fixed_raw": fixed_filtered["raw"], "random_raw": random_filtered["raw"]},
-    )
+        )
+    plot_frequency_comparison(
+        out / "plots" / "raw_frequency_comparison.png",
+        fixed_filtered["raw"],
+        random_filtered["raw"],
+        sample_interval=args.sample_interval,
+        )
+    plot_frequency_spectrum(
+        out / "plots" / "fixed_frequency_spectrum.png",
+        "Fixed trace frequency spectrum (FFT magnitude)",
+        fixed_filtered["raw"],
+        sample_interval=args.sample_interval,
+        color="tab:blue",
+        )
+    plot_frequency_spectrum(
+        out / "plots" / "random_frequency_spectrum.png",
+        "Random trace frequency spectrum (FFT magnitude)",
+        random_filtered["raw"],
+        sample_interval=args.sample_interval,
+        color="tab:orange",
+        )
     plot_all_traces(
         out / "plots" / "fixed_all_traces_overlay.png",
         "Fixed aligned traces overlay",
         fixed_aligned,
         color="tab:blue",
-    )
+        )
     plot_all_traces(
         out / "plots" / "random_all_traces_overlay.png",
         "Random aligned traces overlay",
         random_aligned,
         color="tab:orange",
-    )
+        )
     plot_all_traces_comparison(
         out / "plots" / "all_traces_overlay_comparison.png", fixed_aligned, random_aligned
     )
@@ -485,7 +591,7 @@ def main() -> None:
         out / "plots" / "pointwise_t_stat.png",
         "Point-wise Welch t-statistic (fixed vs random)",
         {"t_stat": pointwise_t},
-    )
+        )
 
     tvla_threshold = 4.5
     exceed_count = int(np.sum(np.abs(pointwise_t) >= tvla_threshold))
@@ -499,7 +605,7 @@ def main() -> None:
         fixed_mig_density,
         random_mig_density,
         t_threshold=tvla_threshold,
-    )
+        )
     overlap_stats = migration_leakage_overlap_score(
         pointwise_t,
         fixed_mig_density,
@@ -511,7 +617,7 @@ def main() -> None:
         fixed_aligned,
         random_aligned,
         z_threshold=3.5,
-    )
+        )
     summary = {
         "fixed_dir": str(fixed_dir),
         "random_dir": str(random_dir),
@@ -519,6 +625,7 @@ def main() -> None:
         "notes": {
             "trace_count_meaning": "Number of files parsed (trace_*.txt).",
             "sample_count_meaning": "Number of power samples inside each trace after alignment.",
+            "frequency_axis_meaning": "FFT frequency axis uses 1/sample_interval units from --sample-interval.",
         },
         "mean_power_mw": {
             "fixed": float(fixed_means.mean()),
