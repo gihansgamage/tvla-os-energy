@@ -462,9 +462,14 @@ def plot_signals(
 
     plt.ylabel("Power (mW)")
 
-    plt.legend()
+    plt.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.18),
+        ncol=3,
+        frameon=True
+    )
 
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0.08, 1, 1])
 
     path.parent.mkdir(
         parents=True,
@@ -473,6 +478,48 @@ def plot_signals(
 
     plt.savefig(path)
 
+    plt.close()
+
+
+def plot_migration_effect(
+    path: Path,
+    fixed_migrations: list[int],
+    random_migrations: list[int]
+):
+
+    x_fixed = np.arange(len(fixed_migrations))
+    x_random = np.arange(len(random_migrations))
+
+    plt.figure(figsize=(12, 5))
+    plt.plot(
+        x_fixed,
+        fixed_migrations,
+        marker="o",
+        linestyle="-",
+        alpha=0.8,
+        label="fixed migration events"
+    )
+    plt.plot(
+        x_random,
+        random_migrations,
+        marker="o",
+        linestyle="-",
+        alpha=0.8,
+        label="random migration events"
+    )
+
+    plt.title("Migration Effect per Trace")
+    plt.xlabel("Trace Index")
+    plt.ylabel("Detected Migration Events")
+    plt.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.15),
+        ncol=2
+    )
+    plt.tight_layout(rect=[0, 0.08, 1, 1])
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(path)
     plt.close()
 
 
@@ -699,6 +746,12 @@ def main():
         len(detect_migration_events(t))
         for t in random_aligned
     ]
+
+    plot_migration_effect(
+        out / "plots/migration_effect.png",
+        fixed_migrations,
+        random_migrations
+    )
 
     summary = {
 
