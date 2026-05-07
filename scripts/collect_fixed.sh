@@ -6,7 +6,7 @@ TRACE_COUNT=${1:-100}
 SAMPLES_PER_TRACE=${2:-100}
 BASE_DIR="$(dirname "$0")/../data/fixed_$RUN_ID"
 TARGET_SCRIPT="$(dirname "$0")/../target/target.py"
-FIXED_INPUT="Avjbeiuh48323032chG"
+FIXED_INPUT="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
 mkdir -p "$BASE_DIR"
 

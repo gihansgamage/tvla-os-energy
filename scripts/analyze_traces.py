@@ -231,10 +231,18 @@ def savgol_denoise(
     polyorder: int = 3
 ) -> np.ndarray:
 
+    if window_length < 3:
+        window_length = 3
+
     if window_length % 2 == 0:
         window_length += 1
 
     if len(signal) <= window_length:
+        window_length = max(3, len(signal) - 1)
+        if window_length % 2 == 0:
+            window_length -= 1
+
+    if window_length <= polyorder or window_length < 3:
         return signal.copy()
 
     return savgol_filter(
@@ -312,7 +320,9 @@ def regression_filter(
 
 def apply_filters(
     signal: np.ndarray,
-    freq_signal: np.ndarray | None = None
+    freq_signal: np.ndarray | None = None,
+    lowpass_cutoff: float = 0.2,
+    savgol_window: int = 11
 ):
 
     results = {
@@ -327,10 +337,16 @@ def apply_filters(
             medfilt(signal, kernel_size=5),
 
         "lowpass":
-            lowpass(signal),
+            lowpass(
+                signal,
+                cutoff_ratio=lowpass_cutoff
+            ),
 
         "savitzky_golay":
-            savgol_denoise(signal),
+            savgol_denoise(
+                signal,
+                window_length=savgol_window
+            ),
 
         "wavelet":
             wavelet_denoise(signal),
@@ -347,6 +363,86 @@ def apply_filters(
         results["regression_predicted"] = predicted
 
     return results
+
+
+def _smoothness_objective(
+    raw: np.ndarray,
+    filtered: np.ndarray,
+    fidelity_weight: float = 0.15
+) -> float:
+
+    min_len = min(len(raw), len(filtered))
+
+    raw = raw[:min_len]
+    filtered = filtered[:min_len]
+
+    roughness = np.std(np.diff(filtered))
+
+    fidelity_penalty = np.sqrt(
+        np.mean((raw - filtered) ** 2)
+    )
+
+    return float(
+        roughness + fidelity_weight * fidelity_penalty
+    )
+
+
+def tune_filter_params(
+    signal: np.ndarray
+) -> dict[str, float | int]:
+
+    cutoff_candidates = [
+        0.08, 0.12, 0.16, 0.2, 0.25, 0.3, 0.35
+    ]
+
+    window_candidates = [
+        5, 7, 9, 11, 13, 15, 17
+    ]
+
+    best_cutoff = cutoff_candidates[0]
+    best_cutoff_score = float("inf")
+
+    for cutoff in cutoff_candidates:
+
+        try:
+            filtered = lowpass(
+                signal,
+                cutoff_ratio=cutoff
+            )
+            score = _smoothness_objective(
+                signal,
+                filtered
+            )
+        except ValueError:
+            continue
+
+        if score < best_cutoff_score:
+            best_cutoff_score = score
+            best_cutoff = cutoff
+
+    best_window = window_candidates[0]
+    best_window_score = float("inf")
+
+    for window in window_candidates:
+
+        filtered = savgol_denoise(
+            signal,
+            window_length=window
+        )
+
+        score = _smoothness_objective(
+            signal,
+            filtered
+        )
+
+        if score < best_window_score:
+            best_window_score = score
+            best_window = window
+
+    return {
+        "lowpass_cutoff": best_cutoff,
+        "savgol_window": best_window,
+    }
 
 # =========================================================
 # TVLA
@@ -481,36 +577,72 @@ def plot_signals(
     plt.close()
 
 
+def average_migration_profile(
+    aligned_traces: np.ndarray
+) -> np.ndarray:
+
+    if aligned_traces.size == 0:
+        return np.array([], dtype=float)
+
+    profile_len = aligned_traces.shape[1] - 1
+
+    if profile_len <= 0:
+        return np.array([], dtype=float)
+
+    migration_hits = np.zeros(
+        profile_len,
+        dtype=float
+    )
+
+    for trace in aligned_traces:
+
+        event_idxs = detect_migration_events(trace)
+
+        for idx in event_idxs:
+
+            if 0 <= idx < profile_len:
+                migration_hits[idx] += 1.0
+
+    return migration_hits / aligned_traces.shape[0]
+
+
 def plot_migration_effect(
     path: Path,
-    fixed_migrations: list[int],
-    random_migrations: list[int]
+    fixed_profile: np.ndarray,
+    random_profile: np.ndarray
 ):
 
-    x_fixed = np.arange(len(fixed_migrations))
-    x_random = np.arange(len(random_migrations))
+    common_len = min(
+        len(fixed_profile),
+        len(random_profile)
+    )
+
+    fixed_profile = fixed_profile[:common_len]
+    random_profile = random_profile[:common_len]
+
+    x = np.arange(common_len)
 
     plt.figure(figsize=(12, 5))
     plt.plot(
-        x_fixed,
-        fixed_migrations,
+        x,
+        fixed_profile,
         marker="o",
         linestyle="-",
-        alpha=0.8,
-        label="fixed migration events"
+        alpha=0.85,
+        label="fixed avg migration rate"
     )
     plt.plot(
-        x_random,
-        random_migrations,
+        x,
+        random_profile,
         marker="o",
         linestyle="-",
-        alpha=0.8,
-        label="random migration events"
+        alpha=0.85,
+        label="random avg migration rate"
     )
 
-    plt.title("Migration Effect per Trace")
-    plt.xlabel("Trace Index")
-    plt.ylabel("Detected Migration Events")
+    plt.title("Migration Effect per Sample Index (Average Across Traces)")
+    plt.xlabel("Sample Index")
+    plt.ylabel("Average Migration Event Rate")
     plt.legend(
         loc="upper center",
         bbox_to_anchor=(0.5, -0.15),
@@ -653,14 +785,38 @@ def main():
 
     print("Applying filters...")
 
+    fixed_tuned = tune_filter_params(
+        fixed_avg
+    )
+    random_tuned = tune_filter_params(
+        random_avg
+    )
+
+    tuned_lowpass_cutoff = float(np.mean([
+        fixed_tuned["lowpass_cutoff"],
+        random_tuned["lowpass_cutoff"],
+    ]))
+
+    tuned_savgol_window = int(np.round(np.mean([
+        fixed_tuned["savgol_window"],
+        random_tuned["savgol_window"],
+    ])))
+
+    if tuned_savgol_window % 2 == 0:
+        tuned_savgol_window += 1
+
     fixed_filtered = apply_filters(
         fixed_avg,
-        fixed_freq
+        fixed_freq,
+        lowpass_cutoff=tuned_lowpass_cutoff,
+        savgol_window=tuned_savgol_window
     )
 
     random_filtered = apply_filters(
         random_avg,
-        random_freq
+        random_freq,
+        lowpass_cutoff=tuned_lowpass_cutoff,
+        savgol_window=tuned_savgol_window
     )
 
     print("Running TVLA...")
@@ -747,10 +903,18 @@ def main():
         for t in random_aligned
     ]
 
+    fixed_migration_profile = average_migration_profile(
+        fixed_aligned
+    )
+
+    random_migration_profile = average_migration_profile(
+        random_aligned
+    )
+
     plot_migration_effect(
         out / "plots/migration_effect.png",
-        fixed_migrations,
-        random_migrations
+        fixed_migration_profile,
+        random_migration_profile
     )
 
     summary = {
@@ -772,6 +936,13 @@ def main():
 
         "mean_random_migration_events":
             float(np.mean(random_migrations)),
+
+        "auto_tuned_parameters": {
+            "lowpass_cutoff_ratio":
+                tuned_lowpass_cutoff,
+            "savitzky_golay_window":
+                tuned_savgol_window,
+        },
     }
 
     (out / "summary.json").write_text(
