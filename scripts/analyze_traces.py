@@ -707,6 +707,122 @@ def plot_tvla(
 
     plt.close()
 
+
+def plot_tvla_migration_overlay(
+    path: Path,
+    t_stat: np.ndarray,
+    fixed_profile: np.ndarray,
+    random_profile: np.ndarray
+):
+
+    tvla_len = len(t_stat)
+    migration_len = min(
+        len(fixed_profile),
+        len(random_profile)
+    )
+    common_len = min(tvla_len, migration_len)
+
+    if common_len <= 0:
+        return
+
+    t_abs = np.abs(t_stat[:common_len])
+    fixed_profile = fixed_profile[:common_len]
+    random_profile = random_profile[:common_len]
+    migration_delta = np.abs(
+        fixed_profile - random_profile
+    )
+    x = np.arange(common_len)
+
+    fig, ax_tvla = plt.subplots(
+        figsize=(12, 5)
+    )
+
+    line_tvla = ax_tvla.plot(
+        x,
+        t_abs,
+        color="tab:blue",
+        label="|t-statistic|"
+    )[0]
+    thr_tvla = ax_tvla.axhline(
+        4.5,
+        color="tab:blue",
+        linestyle="--",
+        alpha=0.8,
+        label="TVLA threshold (4.5)"
+    )
+    ax_tvla.set_xlabel("Sample Index")
+    ax_tvla.set_ylabel(
+        "|t-statistic|",
+        color="tab:blue"
+    )
+    ax_tvla.tick_params(
+        axis="y",
+        labelcolor="tab:blue"
+    )
+
+    ax_migration = ax_tvla.twinx()
+    line_fixed = ax_migration.plot(
+        x,
+        fixed_profile,
+        color="tab:green",
+        alpha=0.8,
+        label="fixed migration rate"
+    )[0]
+    line_random = ax_migration.plot(
+        x,
+        random_profile,
+        color="tab:orange",
+        alpha=0.8,
+        label="random migration rate"
+    )[0]
+    line_delta = ax_migration.plot(
+        x,
+        migration_delta,
+        color="tab:red",
+        alpha=0.8,
+        linestyle=":",
+        label="|fixed-random| migration gap"
+    )[0]
+    ax_migration.set_ylabel(
+        "Migration Event Rate",
+        color="tab:red"
+    )
+    ax_migration.tick_params(
+        axis="y",
+        labelcolor="tab:red"
+    )
+
+    handles = [
+        line_tvla,
+        thr_tvla,
+        line_fixed,
+        line_random,
+        line_delta
+    ]
+    labels = [
+        h.get_label()
+        for h in handles
+    ]
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.02),
+        ncol=3,
+        frameon=True
+    )
+    plt.title(
+        "Overlay: TVLA vs Migration Rate"
+    )
+    plt.tight_layout(rect=[0, 0.06, 1, 1])
+
+    path.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+    plt.savefig(path)
+    plt.close()
+
 # =========================================================
 # ARGUMENTS
 # =========================================================
@@ -1036,6 +1152,13 @@ def main():
         random_migration_profile
     )
 
+    plot_tvla_migration_overlay(
+        out / "plots/tvla_migration_overlay.png",
+        t_stat_regression_residual,
+        fixed_migration_profile,
+        random_migration_profile
+    )
+
     summary = {
 
         "fixed_traces":
@@ -1055,6 +1178,21 @@ def main():
 
         "samples_exceeding_threshold_regression_residual":
             int(np.sum(np.abs(t_stat_regression_residual) >= 4.5)),
+
+        "max_migration_rate_gap":
+            float(
+                np.max(np.abs(
+                    fixed_migration_profile[:min(
+                        len(fixed_migration_profile),
+                        len(random_migration_profile)
+                    )]
+                    -
+                    random_migration_profile[:min(
+                        len(fixed_migration_profile),
+                        len(random_migration_profile)
+                    )]
+                ))
+            ),
 
         "mean_fixed_migration_events":
             float(np.mean(fixed_migrations)),
