@@ -192,6 +192,27 @@ def average_frequency_trace(folder: Path) -> np.ndarray:
 
     return average_trace(freq_traces)
 
+
+def load_frequency_traces(folder: Path) -> list[np.ndarray]:
+
+    freq_traces = []
+
+    for trace_path in sorted(folder.glob("trace_*.txt")):
+
+        try:
+            freq_traces.append(
+                parse_frequency_trace(trace_path)
+            )
+        except ValueError:
+            continue
+
+    if not freq_traces:
+        raise RuntimeError(
+            f"No frequency traces in {folder}"
+        )
+
+    return freq_traces
+
 # =========================================================
 # FILTERS
 # =========================================================
@@ -783,6 +804,13 @@ def main():
         random_dir
     )
 
+    fixed_freq_traces = load_frequency_traces(
+        fixed_dir
+    )
+    random_freq_traces = load_frequency_traces(
+        random_dir
+    )
+
     print("Applying filters...")
 
     fixed_tuned = tune_filter_params(
@@ -821,9 +849,66 @@ def main():
 
     print("Running TVLA...")
 
-    t_stat, p_val = compute_tvla(
+    t_stat_raw, p_val_raw = compute_tvla(
         fixed_aligned,
         random_aligned
+    )
+
+    fixed_wavelet = align_traces([
+        wavelet_denoise(t)
+        for t in fixed.traces
+    ])[:, :common_len]
+
+    random_wavelet = align_traces([
+        wavelet_denoise(t)
+        for t in random.traces
+    ])[:, :common_len]
+
+    t_stat_wavelet, p_val_wavelet = compute_tvla(
+        fixed_wavelet,
+        random_wavelet
+    )
+
+    fixed_residual_traces = []
+    random_residual_traces = []
+
+    for p_trace, f_trace in zip(
+        fixed.traces,
+        fixed_freq_traces
+    ):
+        residual, _ = regression_filter(
+            p_trace,
+            f_trace
+        )
+        fixed_residual_traces.append(residual)
+
+    for p_trace, f_trace in zip(
+        random.traces,
+        random_freq_traces
+    ):
+        residual, _ = regression_filter(
+            p_trace,
+            f_trace
+        )
+        random_residual_traces.append(residual)
+
+    fixed_residual = align_traces(
+        fixed_residual_traces
+    )
+    random_residual = align_traces(
+        random_residual_traces
+    )
+
+    residual_len = min(
+        fixed_residual.shape[1],
+        random_residual.shape[1]
+    )
+    fixed_residual = fixed_residual[:, :residual_len]
+    random_residual = random_residual[:, :residual_len]
+
+    t_stat_regression_residual, p_val_regression_residual = compute_tvla(
+        fixed_residual,
+        random_residual
     )
 
     timestamp = datetime.utcnow().strftime(
@@ -858,14 +943,38 @@ def main():
 
     save_csv(
         out / "tvla_t_stat.csv",
-        t_stat,
+        t_stat_raw,
         "t_stat"
     )
 
     save_csv(
         out / "tvla_p_value.csv",
-        p_val,
+        p_val_raw,
         "p_value"
+    )
+
+    save_csv(
+        out / "tvla_t_stat_wavelet.csv",
+        t_stat_wavelet,
+        "t_stat_wavelet"
+    )
+
+    save_csv(
+        out / "tvla_p_value_wavelet.csv",
+        p_val_wavelet,
+        "p_value_wavelet"
+    )
+
+    save_csv(
+        out / "tvla_t_stat_regression_residual.csv",
+        t_stat_regression_residual,
+        "t_stat_regression_residual"
+    )
+
+    save_csv(
+        out / "tvla_p_value_regression_residual.csv",
+        p_val_regression_residual,
+        "p_value_regression_residual"
     )
 
     # =====================================================
@@ -886,7 +995,17 @@ def main():
 
     plot_tvla(
         out / "plots/tvla.png",
-        t_stat
+        t_stat_raw
+    )
+
+    plot_tvla(
+        out / "plots/tvla_wavelet.png",
+        t_stat_wavelet
+    )
+
+    plot_tvla(
+        out / "plots/tvla_regression_residual.png",
+        t_stat_regression_residual
     )
 
     # =====================================================
@@ -929,7 +1048,13 @@ def main():
             4.5,
 
         "samples_exceeding_threshold":
-            int(np.sum(np.abs(t_stat) >= 4.5)),
+            int(np.sum(np.abs(t_stat_raw) >= 4.5)),
+
+        "samples_exceeding_threshold_wavelet":
+            int(np.sum(np.abs(t_stat_wavelet) >= 4.5)),
+
+        "samples_exceeding_threshold_regression_residual":
+            int(np.sum(np.abs(t_stat_regression_residual) >= 4.5)),
 
         "mean_fixed_migration_events":
             float(np.mean(fixed_migrations)),
