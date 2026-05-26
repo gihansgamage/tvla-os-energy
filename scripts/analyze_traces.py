@@ -806,21 +806,25 @@ def plot_tvla_migration_overlay(
     fig.legend(
         handles,
         labels,
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.02),
-        ncol=3,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.01),
+        ncol=2,
         frameon=True
     )
     plt.title(
         "Overlay: TVLA vs Migration Rate"
     )
-    plt.tight_layout(rect=[0, 0.06, 1, 1])
+    fig.subplots_adjust(bottom=0.24)
+    plt.tight_layout(rect=[0, 0.12, 1, 1])
 
     path.parent.mkdir(
         parents=True,
         exist_ok=True
     )
-    plt.savefig(path)
+    plt.savefig(
+        path,
+        bbox_inches="tight"
+    )
     plt.close()
 
 # =========================================================
