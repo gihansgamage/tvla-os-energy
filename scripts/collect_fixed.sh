@@ -43,7 +43,7 @@ do
   echo "Fixed Trace $i/$TRACE_COUNT"
   echo "$FIXED_INPUT" >> "$BASE_DIR/inputs.txt"
 
-  sudo powermetrics --samplers cpu_power -i 10 -n "$SAMPLES_PER_TRACE" > "$BASE_DIR/trace_$i.txt" &
+  sudo powermetrics --samplers cpu_power -i 100 -n "$SAMPLES_PER_TRACE" > "$BASE_DIR/trace_$i.txt" &
   PID=$!
 
   run_target "$FIXED_INPUT"
