@@ -3,7 +3,7 @@ set -euo pipefail
 
 RUN_ID=$(date +"%Y%m%d_%H%M%S")
 TRACE_COUNT=${1:-100}
-SAMPLES_PER_TRACE=${2:-100}
+SAMPLES_PER_TRACE=${2:-50}
 CORE_MODE=${3:-ecore}
 BASE_DIR="$(dirname "$0")/../data/fixed_$RUN_ID"
 TARGET_SCRIPT="$(dirname "$0")/../target/target.py"
@@ -43,7 +43,7 @@ do
   echo "Fixed Trace $i/$TRACE_COUNT"
   echo "$FIXED_INPUT" >> "$BASE_DIR/inputs.txt"
 
-  sudo powermetrics --samplers cpu_power -i 100 -n "$SAMPLES_PER_TRACE" > "$BASE_DIR/trace_$i.txt" &
+  sudo powermetrics --samplers cpu_power -i 10 -n "$SAMPLES_PER_TRACE" > "$BASE_DIR/trace_$i.txt" &
   PID=$!
 
   run_target "$FIXED_INPUT"
