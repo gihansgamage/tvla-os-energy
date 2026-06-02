@@ -3,8 +3,9 @@ set -euo pipefail
 
 RUN_ID=$(date +"%Y%m%d_%H%M%S")
 TRACE_COUNT=${1:-100}
-SAMPLES_PER_TRACE=${2:-50}
+SAMPLES_PER_TRACE=${2:-100}
 CORE_MODE=${3:-ecore}
+WORKLOAD_SECONDS=${4:-1.5}
 BASE_DIR="$(dirname "$0")/../data/random_$RUN_ID"
 TARGET_SCRIPT="$(dirname "$0")/../target/target.py"
 
@@ -15,6 +16,7 @@ echo "Collecting RANDOM traces"
 echo "Trace count: $TRACE_COUNT"
 echo "Samples per trace: $SAMPLES_PER_TRACE"
 echo "Core mode: $CORE_MODE"
+echo "Workload seconds: $WORKLOAD_SECONDS"
 echo "Saving to: $BASE_DIR"
 echo "====================================="
 
@@ -24,11 +26,11 @@ run_target() {
   case "$CORE_MODE" in
     ecore)
       # Strictly bias workload to E-cores using background class.
-      taskpolicy -c background python3 "$TARGET_SCRIPT" "$input"
+      taskpolicy -c background python3 "$TARGET_SCRIPT" "$input" "$WORKLOAD_SECONDS"
       ;;
     pcore)
       # Foreground/default class to favor P-cores.
-      taskpolicy -c default python3 "$TARGET_SCRIPT" "$input"
+      taskpolicy -c default python3 "$TARGET_SCRIPT" "$input" "$WORKLOAD_SECONDS"
       ;;
     *)
       echo "❌ Invalid core mode: $CORE_MODE (use: ecore|pcore)"
