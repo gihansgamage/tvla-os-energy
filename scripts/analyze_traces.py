@@ -596,7 +596,12 @@ def compare_filter_metrics(
     )
     comparisons = {}
 
-    for experiment in ["wavelet", "regression_residual"]:
+    for experiment in [
+        "median",
+        "moving_average",
+        "wavelet",
+        "regression_residual"
+    ]:
 
         filtered_rate = float(
             quantitative_metrics[experiment]["exceedance_rate"]
@@ -1578,6 +1583,38 @@ def main():
         random_aligned
     )
 
+    print("Computing TVLA for Median and Moving Average...")
+
+    fixed_median = align_traces([
+        medfilt(t, kernel_size=5)
+        for t in fixed.traces
+    ])[:, :common_len]
+
+    random_median = align_traces([
+        medfilt(t, kernel_size=5)
+        for t in random.traces
+    ])[:, :common_len]
+
+    t_stat_median, p_val_median = compute_tvla(
+        fixed_median,
+        random_median
+    )
+
+    fixed_moving_average = align_traces([
+        moving_average(t, window=5)
+        for t in fixed.traces
+    ])[:, :common_len]
+
+    random_moving_average = align_traces([
+        moving_average(t, window=5)
+        for t in random.traces
+    ])[:, :common_len]
+
+    t_stat_moving_average, p_val_moving_average = compute_tvla(
+        fixed_moving_average,
+        random_moving_average
+    )
+
     fixed_wavelet = align_traces([
         wavelet_denoise(t)
         for t in fixed.traces
@@ -1643,6 +1680,20 @@ def main():
                 random_aligned
             ),
 
+        "median":
+            tvla_quantitative_metrics(
+                t_stat_median,
+                fixed_median,
+                random_median
+            ),
+
+        "moving_average":
+            tvla_quantitative_metrics(
+                t_stat_moving_average,
+                fixed_moving_average,
+                random_moving_average
+            ),
+
         "wavelet":
             tvla_quantitative_metrics(
                 t_stat_wavelet,
@@ -1701,6 +1752,30 @@ def main():
     )
 
     save_csv(
+        out / "tvla_t_stat_median.csv",
+        t_stat_median,
+        "t_stat_median"
+    )
+
+    save_csv(
+        out / "tvla_p_value_median.csv",
+        p_val_median,
+        "p_value_median"
+    )
+
+    save_csv(
+        out / "tvla_t_stat_moving_average.csv",
+        t_stat_moving_average,
+        "t_stat_moving_average"
+    )
+
+    save_csv(
+        out / "tvla_p_value_moving_average.csv",
+        p_val_moving_average,
+        "p_value_moving_average"
+    )
+
+    save_csv(
         out / "tvla_t_stat_wavelet.csv",
         t_stat_wavelet,
         "t_stat_wavelet"
@@ -1748,6 +1823,16 @@ def main():
     plot_tvla(
         out / "plots/tvla.png",
         t_stat_raw
+    )
+
+    plot_tvla(
+        out / "plots/tvla_median.png",
+        t_stat_median
+    )
+
+    plot_tvla(
+        out / "plots/tvla_moving_average.png",
+        t_stat_moving_average
     )
 
     plot_tvla(
@@ -1861,6 +1946,16 @@ def main():
 
         "samples_exceeding_threshold":
             quantitative_metrics["raw"][
+                "samples_exceeding_threshold"
+            ],
+
+        "samples_exceeding_threshold_median":
+            quantitative_metrics["median"][
+                "samples_exceeding_threshold"
+            ],
+
+        "samples_exceeding_threshold_moving_average":
+            quantitative_metrics["moving_average"][
                 "samples_exceeding_threshold"
             ],
 
