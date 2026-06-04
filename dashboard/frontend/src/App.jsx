@@ -35,10 +35,14 @@ function App() {
     }
   }, [selectedId]);
 
-  const handleRunAnalysis = async () => {
+  const handleRunAnalysis = async (allTraces = false) => {
     setIsAnalyzing(true);
     try {
-      const res = await fetch(`${API_BASE}/analyze`, { method: 'POST' });
+      const res = await fetch(`${API_BASE}/analyze`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ all_traces: allTraces })
+      });
       if (res.ok) {
         await fetchAnalyses();
       } else {
@@ -109,18 +113,37 @@ function App() {
             <h1>Dashboard</h1>
             <p className="text-muted">Interpret latest TVLA statistical results.</p>
           </div>
-          <button 
-            className="btn btn-primary glass-panel" 
-            onClick={handleRunAnalysis}
-            disabled={isAnalyzing}
-            style={{ opacity: isAnalyzing ? 0.7 : 1 }}
-          >
-            {isAnalyzing ? (
-              <><div className="loading-indicator" /> Running...</>
-            ) : (
-              <><Play size={18} /> Run Analysis on Latest Data</>
-            )}
-          </button>
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <button 
+              className="btn btn-primary glass-panel" 
+              onClick={() => handleRunAnalysis(false)}
+              disabled={isAnalyzing}
+              style={{ opacity: isAnalyzing ? 0.7 : 1 }}
+            >
+              {isAnalyzing ? (
+                <><div className="loading-indicator" /> Running...</>
+              ) : (
+                <><Play size={18} /> Run Latest</>
+              )}
+            </button>
+            <button 
+              className="btn btn-primary glass-panel" 
+              onClick={() => handleRunAnalysis(true)}
+              disabled={isAnalyzing}
+              style={{ 
+                opacity: isAnalyzing ? 0.7 : 1, 
+                backgroundColor: 'rgba(168, 85, 247, 0.1)', 
+                borderColor: 'rgba(168, 85, 247, 0.3)',
+                color: 'var(--text-primary)'
+              }}
+            >
+              {isAnalyzing ? (
+                <><div className="loading-indicator" /> Running...</>
+              ) : (
+                <><Database size={18} /> Run All Data</>
+              )}
+            </button>
+          </div>
         </div>
 
         {selectedId && summary ? (

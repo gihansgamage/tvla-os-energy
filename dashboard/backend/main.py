@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import os
 import json
 import subprocess
@@ -60,16 +61,26 @@ def get_plot(analysis_id: str, plot_name: str):
         raise HTTPException(status_code=404, detail="Plot not found")
     return FileResponse(plot_path)
 
+class AnalyzeRequest(BaseModel):
+    all_traces: bool = False
+
 @app.post("/api/analyze")
-def run_analysis():
+def run_analysis(req: AnalyzeRequest = None):
+    if req is None:
+        req = AnalyzeRequest()
+
     script_path = SCRIPTS_DIR / "analyze_traces.py"
     if not script_path.exists():
         raise HTTPException(status_code=500, detail="Analyze script not found")
     
     try:
         # Run analyze_traces.py
+        cmd = ["python3", str(script_path)]
+        if req.all_traces:
+            cmd.append("--all-traces")
+            
         process = subprocess.run(
-            ["python3", str(script_path)],
+            cmd,
             cwd=str(PROJECT_ROOT),
             capture_output=True,
             text=True

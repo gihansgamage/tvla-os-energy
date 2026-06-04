@@ -1402,6 +1402,12 @@ def build_parser():
     )
 
     p.add_argument(
+        "--all-traces",
+        action="store_true",
+        help="Analyze all traces found in data-root instead of just the latest pair."
+    )
+
+    p.add_argument(
         "--results-root",
         type=Path,
         default=Path("results")
@@ -1488,21 +1494,60 @@ def main():
 
     args = build_parser().parse_args()
 
-    fixed_dir, random_dir = select_latest_pair(
-        args.data_root
-    )
+    if args.all_traces:
+        fixed_dirs = sorted(args.data_root.glob("fixed_*"))
+        random_dirs = sorted(args.data_root.glob("random_*"))
+        if not fixed_dirs or not random_dirs:
+            raise RuntimeError("No datasets found for --all-traces.")
+        
+        fixed_traces_all = []
+        fixed_freq_traces_all = []
+        for d in fixed_dirs:
+            fixed_traces_all.extend(load_experiment(d, "fixed").traces)
+            fixed_freq_traces_all.extend(load_frequency_traces(d))
+            
+        random_traces_all = []
+        random_freq_traces_all = []
+        for d in random_dirs:
+            random_traces_all.extend(load_experiment(d, "random").traces)
+            random_freq_traces_all.extend(load_frequency_traces(d))
 
-    print("Loading traces...")
+        fixed = ExperimentData(label="fixed", traces=fixed_traces_all)
+        random = ExperimentData(label="random", traces=random_traces_all)
+        
+        fixed_freq_traces = fixed_freq_traces_all
+        random_freq_traces = random_freq_traces_all
+        fixed_freq = average_trace(fixed_freq_traces)
+        random_freq = average_trace(random_freq_traces)
+    else:
+        fixed_dir, random_dir = select_latest_pair(
+            args.data_root
+        )
 
-    fixed = load_experiment(
-        fixed_dir,
-        "fixed"
-    )
+        fixed = load_experiment(
+            fixed_dir,
+            "fixed"
+        )
 
-    random = load_experiment(
-        random_dir,
-        "random"
-    )
+        random = load_experiment(
+            random_dir,
+            "random"
+        )
+        
+        fixed_freq = average_frequency_trace(
+            fixed_dir
+        )
+    
+        random_freq = average_frequency_trace(
+            random_dir
+        )
+    
+        fixed_freq_traces = load_frequency_traces(
+            fixed_dir
+        )
+        random_freq_traces = load_frequency_traces(
+            random_dir
+        )
 
     fixed_aligned = align_traces(
         fixed.traces
@@ -1524,21 +1569,6 @@ def main():
     fixed_avg = fixed_aligned.mean(axis=0)
 
     random_avg = random_aligned.mean(axis=0)
-
-    fixed_freq = average_frequency_trace(
-        fixed_dir
-    )
-
-    random_freq = average_frequency_trace(
-        random_dir
-    )
-
-    fixed_freq_traces = load_frequency_traces(
-        fixed_dir
-    )
-    random_freq_traces = load_frequency_traces(
-        random_dir
-    )
 
     print("Applying filters...")
 
