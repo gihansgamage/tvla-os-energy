@@ -343,7 +343,9 @@ def apply_filters(
     signal: np.ndarray,
     freq_signal: np.ndarray | None = None,
     lowpass_cutoff: float = 0.2,
-    savgol_window: int = 11
+    savgol_window: int = 11,
+    median_window: int = 5,
+    moving_average_window: int = 5
 ):
 
     results = {
@@ -352,10 +354,10 @@ def apply_filters(
             signal,
 
         "moving_average":
-            moving_average(signal),
+            moving_average(signal, window=moving_average_window),
 
         "median":
-            medfilt(signal, kernel_size=5),
+            medfilt(signal, kernel_size=median_window),
 
         "lowpass":
             lowpass(
@@ -600,7 +602,8 @@ def compare_filter_metrics(
         "median",
         "moving_average",
         "wavelet",
-        "regression_residual"
+        "regression_residual",
+        "savitzky_golay"
     ]:
 
         filtered_rate = float(
@@ -1462,6 +1465,26 @@ def build_parser():
         help="summary.json from a P-core run for Decision 4."
     )
 
+    p.add_argument(
+        "--median-window",
+        type=int,
+        default=5,
+        help="Window size for median filter (must be odd, default: 5)"
+    )
+
+    p.add_argument(
+        "--moving-average-window",
+        type=int,
+        default=5,
+        help="Window size for moving average filter (default: 5)"
+    )
+
+    p.add_argument(
+        "--savgol-window",
+        type=int,
+        help="Override auto-tuned window size for Savitzky-Golay filter (must be odd)"
+    )
+
     return p
 
 # =========================================================
@@ -1519,6 +1542,9 @@ def main():
         random_freq_traces = random_freq_traces_all
         fixed_freq = average_trace(fixed_freq_traces)
         random_freq = average_trace(random_freq_traces)
+
+        dataset_timestamp = fixed_dirs[-1].name.replace("fixed_", "")
+        folder_suffix = "_all"
     else:
         fixed_dir, random_dir = select_latest_pair(
             args.data_root
@@ -1548,6 +1574,9 @@ def main():
         random_freq_traces = load_frequency_traces(
             random_dir
         )
+
+        dataset_timestamp = fixed_dir.name.replace("fixed_", "")
+        folder_suffix = ""
 
     fixed_aligned = align_traces(
         fixed.traces
@@ -1592,18 +1621,25 @@ def main():
     if tuned_savgol_window % 2 == 0:
         tuned_savgol_window += 1
 
+    if args.savgol_window is not None:
+        tuned_savgol_window = args.savgol_window
+
     fixed_filtered = apply_filters(
         fixed_avg,
         fixed_freq,
         lowpass_cutoff=tuned_lowpass_cutoff,
-        savgol_window=tuned_savgol_window
+        savgol_window=tuned_savgol_window,
+        median_window=args.median_window,
+        moving_average_window=args.moving_average_window
     )
 
     random_filtered = apply_filters(
         random_avg,
         random_freq,
         lowpass_cutoff=tuned_lowpass_cutoff,
-        savgol_window=tuned_savgol_window
+        savgol_window=tuned_savgol_window,
+        median_window=args.median_window,
+        moving_average_window=args.moving_average_window
     )
 
     print("Running TVLA...")
@@ -1616,12 +1652,12 @@ def main():
     print("Computing TVLA for Median and Moving Average...")
 
     fixed_median = align_traces([
-        medfilt(t, kernel_size=5)
+        medfilt(t, kernel_size=args.median_window)
         for t in fixed.traces
     ])[:, :common_len]
 
     random_median = align_traces([
-        medfilt(t, kernel_size=5)
+        medfilt(t, kernel_size=args.median_window)
         for t in random.traces
     ])[:, :common_len]
 
@@ -1631,12 +1667,12 @@ def main():
     )
 
     fixed_moving_average = align_traces([
-        moving_average(t, window=5)
+        moving_average(t, window=args.moving_average_window)
         for t in fixed.traces
     ])[:, :common_len]
 
     random_moving_average = align_traces([
-        moving_average(t, window=5)
+        moving_average(t, window=args.moving_average_window)
         for t in random.traces
     ])[:, :common_len]
 
@@ -1658,6 +1694,21 @@ def main():
     t_stat_wavelet, p_val_wavelet = compute_tvla(
         fixed_wavelet,
         random_wavelet
+    )
+
+    fixed_savitzky_golay = align_traces([
+        savgol_denoise(t, window_length=tuned_savgol_window)
+        for t in fixed.traces
+    ])[:, :common_len]
+
+    random_savitzky_golay = align_traces([
+        savgol_denoise(t, window_length=tuned_savgol_window)
+        for t in random.traces
+    ])[:, :common_len]
+
+    t_stat_savitzky_golay, p_val_savitzky_golay = compute_tvla(
+        fixed_savitzky_golay,
+        random_savitzky_golay
     )
 
     fixed_residual_traces = []
@@ -1731,6 +1782,13 @@ def main():
                 random_wavelet
             ),
 
+        "savitzky_golay":
+            tvla_quantitative_metrics(
+                t_stat_savitzky_golay,
+                fixed_savitzky_golay,
+                random_savitzky_golay
+            ),
+
         "regression_residual":
             tvla_quantitative_metrics(
                 t_stat_regression_residual,
@@ -1739,11 +1797,7 @@ def main():
             ),
     }
 
-    timestamp = datetime.utcnow().strftime(
-        "%Y%m%d_%H%M%S"
-    )
-
-    out = args.results_root / f"analysis_{timestamp}"
+    out = args.results_root / f"analysis_{dataset_timestamp}{folder_suffix}"
 
     # =====================================================
     # SAVE FILTERED SIGNALS
@@ -1818,6 +1872,18 @@ def main():
     )
 
     save_csv(
+        out / "tvla_t_stat_savitzky_golay.csv",
+        t_stat_savitzky_golay,
+        "t_stat_savitzky_golay"
+    )
+
+    save_csv(
+        out / "tvla_p_value_savitzky_golay.csv",
+        p_val_savitzky_golay,
+        "p_value_savitzky_golay"
+    )
+
+    save_csv(
         out / "tvla_t_stat_regression_residual.csv",
         t_stat_regression_residual,
         "t_stat_regression_residual"
@@ -1868,6 +1934,11 @@ def main():
     plot_tvla(
         out / "plots/tvla_wavelet.png",
         t_stat_wavelet
+    )
+
+    plot_tvla(
+        out / "plots/tvla_savitzky_golay.png",
+        t_stat_savitzky_golay
     )
 
     plot_tvla(
@@ -1925,6 +1996,18 @@ def main():
         t_stat_regression_residual,
         fixed_migration_profile,
         random_migration_profile
+    )
+
+    save_csv(
+        out / "migration_fixed.csv",
+        fixed_migration_profile,
+        "migration_rate"
+    )
+
+    save_csv(
+        out / "migration_random.csv",
+        random_migration_profile,
+        "migration_rate"
     )
 
     control_summary = (
@@ -1994,6 +2077,11 @@ def main():
                 "samples_exceeding_threshold"
             ],
 
+        "samples_exceeding_threshold_savitzky_golay":
+            quantitative_metrics["savitzky_golay"][
+                "samples_exceeding_threshold"
+            ],
+
         "samples_exceeding_threshold_regression_residual":
             quantitative_metrics["regression_residual"][
                 "samples_exceeding_threshold"
@@ -2037,6 +2125,13 @@ def main():
                 tuned_lowpass_cutoff,
             "savitzky_golay_window":
                 tuned_savgol_window,
+        },
+
+        "filter_parameters": {
+            "median_window": args.median_window,
+            "moving_average_window": args.moving_average_window,
+            "savitzky_golay_window": tuned_savgol_window,
+            "savitzky_golay_auto_tuned": args.savgol_window is None,
         },
     }
 

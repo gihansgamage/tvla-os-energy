@@ -5,7 +5,7 @@ from Crypto.Cipher import AES
 
 # Fixed AES-128 key (16 bytes) for fixed-vs-random plaintext TVLA.
 AES_KEY = bytes.fromhex(
-    "00112233445566778899aabbccddeeff"
+    "7d2b8f4e0c1a5b9e3f6d8c2a4e7b1f0d"
 )
 DEFAULT_DURATION_SECONDS = 1.5
 BLOCKS_PER_BATCH = 4096
