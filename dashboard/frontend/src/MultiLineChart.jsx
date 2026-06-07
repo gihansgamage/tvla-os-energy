@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Download } from 'lucide-react';
+import { downloadSvgAsPng } from './downloadSvg';
 
 export function MultiLineChart({
   series, // Array of { key, label, data (array of numbers), color, yAxis: 'left' | 'right', isDashed?: boolean }
@@ -7,6 +9,8 @@ export function MultiLineChart({
   thresholds = [], // Array of { value, color, dasharray, label, yAxis: 'left' | 'right' }
   height = 220,
   forceZeroMin = false,
+  downloadTitle = '',
+  downloadSubtitle = ''
 }) {
   const svgRef = useRef(null);
   const [visibleKeys, setVisibleKeys] = useState({});
@@ -143,8 +147,22 @@ export function MultiLineChart({
   const ticksL = getTicks(domainL);
   const ticksR = hasRightAxis ? getTicks(domainR) : [];
 
+  const downloadLegends = series.map(s => ({
+    label: s.label,
+    color: s.color,
+    visible: visibleKeys[s.key] !== false
+  }));
+
   return (
-    <div style={{ background: 'var(--bg-secondary)', borderRadius: 8, padding: '1rem', border: '1px solid var(--border-color)' }}>
+    <div style={{ background: 'var(--bg-secondary)', borderRadius: 8, padding: '1rem', border: '1px solid var(--border-color)', position: 'relative' }}>
+      <button
+        onClick={() => downloadSvgAsPng(svgRef.current, 'multiline-chart.png', downloadTitle, downloadSubtitle, downloadLegends)}
+        className="btn btn-ghost"
+        style={{ position: 'absolute', top: 8, right: 8, padding: '6px', zIndex: 10 }}
+        title="Download Graph"
+      >
+        <Download size={14} />
+      </button>
       <div style={{ position: 'relative' }}>
         <svg
           viewBox={`0 0 ${W} ${H}`}

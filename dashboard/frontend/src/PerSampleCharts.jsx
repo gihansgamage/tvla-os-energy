@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Download } from 'lucide-react';
 import { MultiLineChart } from './MultiLineChart';
+import { downloadSvgAsPng } from './downloadSvg';
 
 const API_BASE = 'http://localhost:8000/api';
 
@@ -58,7 +60,7 @@ const ALL_FILTERS_CONFIG = [
 // -----------------------------------------------------------
 // Inline SVG bar chart for t-stat values per sample
 // -----------------------------------------------------------
-function TStatChart({ data, color, threshold = 4.5 }) {
+function TStatChart({ data, color, threshold = 4.5, title = '', subtitle = '' }) {
   const svgRef = useRef(null);
   const [tooltip, setTooltip] = useState(null);
   const W = 800, H = 140;
@@ -83,6 +85,14 @@ function TStatChart({ data, color, threshold = 4.5 }) {
 
   return (
     <div style={{ position: 'relative' }}>
+      <button
+        onClick={() => downloadSvgAsPng(svgRef.current, 't-statistic-chart.png', title, subtitle)}
+        className="btn btn-ghost"
+        style={{ position: 'absolute', top: -5, right: 0, padding: '4px', zIndex: 10 }}
+        title="Download Graph"
+      >
+        <Download size={14} />
+      </button>
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }} ref={svgRef}>
         {gridVals.map((v, i) => {
           const y = yPos(v);
@@ -157,7 +167,7 @@ function TStatChart({ data, color, threshold = 4.5 }) {
 // -----------------------------------------------------------
 // Inline SVG scatter for p-value (log scale)
 // -----------------------------------------------------------
-function PValueChart({ data, color }) {
+function PValueChart({ data, color, title = '', subtitle = '' }) {
   const svgRef = useRef(null);
   const [tooltip, setTooltip] = useState(null);
   const W = 800, H = 130;
@@ -182,6 +192,14 @@ function PValueChart({ data, color }) {
 
   return (
     <div style={{ position: 'relative' }}>
+      <button
+        onClick={() => downloadSvgAsPng(svgRef.current, 'p-value-chart.png', title, subtitle)}
+        className="btn btn-ghost"
+        style={{ position: 'absolute', top: -5, right: 0, padding: '4px', zIndex: 10 }}
+        title="Download Graph"
+      >
+        <Download size={14} />
+      </button>
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }} ref={svgRef}>
         {gridPs.map((p, i) => {
           const y = yPos(p);
@@ -407,7 +425,13 @@ function FilterPanel({ analysisId, filterKey, meta, summary }) {
                 T-Statistic per Sample
                 <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.7rem' }}>(|t| shown • red = exceeds 4.5)</span>
               </div>
-              <TStatChart data={tData} color={meta.color} threshold={4.5} />
+              <TStatChart 
+                data={tData} 
+                color={meta.color} 
+                threshold={4.5} 
+                title={`T-Statistic per Sample (${meta.label})`} 
+                subtitle="|t| shown • red = exceeds 4.5"
+              />
 
               <div style={{ height: '1rem' }} />
 
@@ -416,7 +440,12 @@ function FilterPanel({ analysisId, filterKey, meta, summary }) {
                 P-Value per Sample
                 <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.7rem' }}>(log₁₀ scale • red = p&lt;0.05 significant • dashed = α=0.05)</span>
               </div>
-              <PValueChart data={pData} color={meta.color} />
+              <PValueChart 
+                data={pData} 
+                color={meta.color} 
+                title={`P-Value per Sample (${meta.label})`} 
+                subtitle="log₁₀ scale • red = p<0.05 significant • dashed = α=0.05"
+              />
             </>
           )}
         </div>
@@ -512,7 +541,13 @@ function AllFiltersPanel({ analysisId, type, label, color }) {
               <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
                 Toggle legends to view specific filters. Displays signal amplitude over time.
               </div>
-              <MultiLineChart series={series} leftTitle="Power Amplitude (mW)" height={250} />
+              <MultiLineChart 
+                series={series} 
+                leftTitle="Power Amplitude (mW)" 
+                height={250} 
+                downloadTitle={label}
+                downloadSubtitle="Displays signal amplitude over time."
+              />
             </div>
           )}
         </div>
@@ -605,7 +640,14 @@ function MigrationEffectPanel({ analysisId, color }) {
               <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
                 Average task migration rate per sample index (average across traces).
               </div>
-              <MultiLineChart series={series} leftTitle="Avg Migration Event Rate" forceZeroMin={true} height={220} />
+              <MultiLineChart 
+                series={series} 
+                leftTitle="Avg Migration Event Rate" 
+                forceZeroMin={true} 
+                height={220} 
+                downloadTitle="Migration Effect"
+                downloadSubtitle="Average task migration rate per sample index (average across traces)."
+              />
             </div>
           )}
         </div>
@@ -718,6 +760,8 @@ function MigrationOverlayPanel({ analysisId, color }) {
                   { value: 4.5, color: '#3b82f6', dasharray: '4 3', label: 'TVLA threshold (4.5)', yAxis: 'left' }
                 ]}
                 height={260}
+                downloadTitle="Migration Overlay (TVLA vs Migration)"
+                downloadSubtitle="Overlay showing absolute TVLA t-statistic (left axis) vs migration rates (right axis)."
               />
             </div>
           )}
@@ -822,6 +866,8 @@ function TStatComparisonPanel({ analysisId, color }) {
                   { value: 4.5, color: '#ef4444', dasharray: '4 3', label: 'Threshold (4.5)', yAxis: 'left' }
                 ]}
                 height={260}
+                downloadTitle="T-Statistic Comparison (All Filters)"
+                downloadSubtitle="Compare absolute t-statistic values (|t|) across all 5 filters."
               />
             </div>
           )}
