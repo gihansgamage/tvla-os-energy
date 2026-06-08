@@ -2,7 +2,7 @@
 set -euo pipefail
 
 RUN_ID=$(date +"%Y%m%d_%H%M%S")
-TRACE_COUNT=${1:-5000}
+TRACE_COUNT=${1:-100}
 SAMPLES_PER_TRACE=${2:-100}
 CORE_MODE=${3:-ecore}
 WORKLOAD_SECONDS=${4:-1.5}

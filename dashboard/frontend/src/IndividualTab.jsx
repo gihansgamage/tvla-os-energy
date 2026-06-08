@@ -180,6 +180,7 @@ export default function IndividualTab({ analysisId, summary }) {
             {summary.fixed_traces != null && <span>Fixed: <b>{summary.fixed_traces}</b> traces</span>}
             {summary.random_traces != null && <span>Random: <b>{summary.random_traces}</b> traces</span>}
             {summary.tvla_threshold != null && <span>Threshold: <b>|t| = {summary.tvla_threshold}</b></span>}
+            {summary.fixed_input && <span>Fixed Input: <b className="mono">{summary.fixed_input}</b></span>}
           </div>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>

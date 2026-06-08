@@ -76,6 +76,7 @@ def _extract_row(item: Path, summary: dict) -> dict:
         # general
         "fixed_traces": fixed_traces,
         "random_traces": random_traces,
+        "fixed_input": summary.get("fixed_input", "Unknown"),
         "tvla_threshold": summary.get("tvla_threshold", 4.5),
         "max_migration_rate_gap": summary.get("max_migration_rate_gap") or summary.get("migration_alignment", {}).get("max_migration_rate_gap"),
         "mean_fixed_migration": summary.get("mean_fixed_migration_events"),

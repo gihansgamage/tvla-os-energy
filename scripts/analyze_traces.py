@@ -68,6 +68,11 @@ FREQ_PATTERN = re.compile(
     re.IGNORECASE
 )
 
+ELAPSED_TIME_PATTERN = re.compile(
+    r"\*\*\* Sampled system activity .* \(([0-9.]+)(ms|s) elapsed\) \*\*\*",
+    re.IGNORECASE
+)
+
 # =========================================================
 # DATA CLASS
 # =========================================================
@@ -127,6 +132,21 @@ def parse_frequency_trace(path: Path) -> np.ndarray:
         raise ValueError(f"No frequency values found in {path}")
 
     return np.array(freqs, dtype=float)
+
+def parse_elapsed_time(path: Path) -> np.ndarray:
+    values = []
+    text = path.read_text(errors="ignore")
+    for line in text.splitlines():
+        match = ELAPSED_TIME_PATTERN.search(line)
+        if match:
+            val = float(match.group(1))
+            unit = match.group(2).lower()
+            if unit == 's':
+                val *= 1000.0
+            values.append(val)
+    if not values:
+        raise ValueError(f"No elapsed time values found in {path}")
+    return np.array(values, dtype=float)
 
 # =========================================================
 # LOADING
@@ -212,6 +232,17 @@ def load_frequency_traces(folder: Path) -> list[np.ndarray]:
         )
 
     return freq_traces
+
+def load_elapsed_traces(folder: Path) -> list[np.ndarray]:
+    elapsed_traces = []
+    for trace_path in sorted(folder.glob("trace_*.txt")):
+        try:
+            elapsed_traces.append(parse_elapsed_time(trace_path))
+        except ValueError:
+            continue
+    if not elapsed_traces:
+        raise RuntimeError(f"No elapsed times in {folder}")
+    return elapsed_traces
 
 # =========================================================
 # FILTERS
@@ -1525,21 +1556,28 @@ def main():
         
         fixed_traces_all = []
         fixed_freq_traces_all = []
+        fixed_elapsed_traces_all = []
         for d in fixed_dirs:
             fixed_traces_all.extend(load_experiment(d, "fixed").traces)
             fixed_freq_traces_all.extend(load_frequency_traces(d))
+            fixed_elapsed_traces_all.extend(load_elapsed_traces(d))
             
         random_traces_all = []
         random_freq_traces_all = []
+        random_elapsed_traces_all = []
         for d in random_dirs:
             random_traces_all.extend(load_experiment(d, "random").traces)
             random_freq_traces_all.extend(load_frequency_traces(d))
+            random_elapsed_traces_all.extend(load_elapsed_traces(d))
 
         fixed = ExperimentData(label="fixed", traces=fixed_traces_all)
         random = ExperimentData(label="random", traces=random_traces_all)
         
         fixed_freq_traces = fixed_freq_traces_all
         random_freq_traces = random_freq_traces_all
+        fixed_elapsed_traces = fixed_elapsed_traces_all
+        random_elapsed_traces = random_elapsed_traces_all
+        
         fixed_freq = average_trace(fixed_freq_traces)
         random_freq = average_trace(random_freq_traces)
 
@@ -1574,9 +1612,28 @@ def main():
         random_freq_traces = load_frequency_traces(
             random_dir
         )
+        
+        fixed_elapsed_traces = load_elapsed_traces(
+            fixed_dir
+        )
+        random_elapsed_traces = load_elapsed_traces(
+            random_dir
+        )
 
         dataset_timestamp = fixed_dir.name.replace("fixed_", "")
         folder_suffix = ""
+
+    fixed_input_value = "Unknown"
+    
+    if args.all_traces:
+        if len(fixed_dirs) > 0:
+            inputs_path = fixed_dirs[-1] / "inputs.txt"
+            if inputs_path.exists():
+                fixed_input_value = inputs_path.read_text().strip().split('\n')[0]
+    else:
+        inputs_path = fixed_dir / "inputs.txt"
+        if inputs_path.exists():
+            fixed_input_value = inputs_path.read_text().strip().split('\n')[0]
 
     fixed_aligned = align_traces(
         fixed.traces
@@ -2010,6 +2067,45 @@ def main():
         "migration_rate"
     )
 
+    # Save Elapsed Times CSV
+    try:
+        elapsed_csv_path = out / "tvla_elapsed_times.csv"
+        anomalies_csv_path = out / "tvla_elapsed_anomalies.csv"
+        
+        # We find the max length to create columns
+        max_len = 0
+        for e in fixed_elapsed_traces + random_elapsed_traces:
+            max_len = max(max_len, len(e))
+        
+        headers = ["trace_type", "trace_index"] + [f"sample_{i}" for i in range(max_len)]
+        
+        anomalies_rows = [["trace_type", "trace_index", "sample_index", "elapsed_time_ms"]]
+        
+        with open(elapsed_csv_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+            
+            for idx, e in enumerate(fixed_elapsed_traces):
+                row = ["fixed", idx] + list(e) + [""] * (max_len - len(e))
+                writer.writerow(row)
+                for s_idx, val in enumerate(e):
+                    if val < 10.0 or val > 15.0:
+                        anomalies_rows.append(["fixed", idx, s_idx, val])
+                        
+            for idx, e in enumerate(random_elapsed_traces):
+                row = ["random", idx] + list(e) + [""] * (max_len - len(e))
+                writer.writerow(row)
+                for s_idx, val in enumerate(e):
+                    if val < 10.0 or val > 15.0:
+                        anomalies_rows.append(["random", idx, s_idx, val])
+                        
+        with open(anomalies_csv_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerows(anomalies_rows)
+            
+    except Exception as ex:
+        print(f"Warning: Could not save elapsed times CSV: {ex}")
+
     control_summary = (
         json.loads(args.control_summary.read_text())
         if args.control_summary is not None
@@ -2047,6 +2143,8 @@ def main():
     )
 
     summary = {
+
+        "fixed_input": fixed_input_value,
 
         "fixed_traces":
             len(fixed_aligned),

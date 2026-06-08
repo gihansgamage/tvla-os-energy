@@ -265,6 +265,7 @@ function RunsTable({ data, selectedId, onSelect }) {
             <Th k="power_diff_mw_raw" label="Δ Power (mW)" />
             <Th k="fixed_traces" label="Fixed" />
             <Th k="random_traces" label="Random" />
+            <Th k="fixed_input" label="Fixed Input" />
           </tr>
         </thead>
         <tbody>
@@ -281,6 +282,7 @@ function RunsTable({ data, selectedId, onSelect }) {
               <td className="mono">{d.power_diff_mw_raw != null ? `${d.power_diff_mw_raw.toFixed(0)} mW` : '—'}</td>
               <td className="mono">{d.fixed_traces ?? '—'}</td>
               <td className="mono">{d.random_traces ?? '—'}</td>
+              <td className="mono" style={{ fontSize: '0.7rem' }}>{d.fixed_input ?? '—'}</td>
             </tr>
           ))}
         </tbody>

@@ -2,14 +2,14 @@
 set -euo pipefail
 
 RUN_ID=$(date +"%Y%m%d_%H%M%S")
-TRACE_COUNT=${1:-5000}
+TRACE_COUNT=${1:-100}
 SAMPLES_PER_TRACE=${2:-100}
 CORE_MODE=${3:-ecore}
 WORKLOAD_SECONDS=${4:-1.5}
 BASE_DIR="$(dirname "$0")/../data/fixed_$RUN_ID"
 TARGET_SCRIPT="$(dirname "$0")/../target/target.py"
-FIXED_INPUT="Avjbeiuh48323032"
-
+FIXED_INPUT="afsghJklafdh1237"
+#Avjbeiuh48323032
 mkdir -p "$BASE_DIR"
 
 echo "====================================="
