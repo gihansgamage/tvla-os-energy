@@ -698,3 +698,174 @@ html, body, #root {
    ============================================================ */
 .page-section { margin-bottom: 2rem; }
 .page-section:last-child { margin-bottom: 0; }
+
+/* ============================================================
+   DONUT CHART & LEAKAGE BY TRACE COUNT
+   ============================================================ */
+.leakage-dashboard-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+}
+
+.overall-leakage-card, .trace-dist-card, .trace-details-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.5rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s;
+  min-height: 310px;
+}
+
+.overall-leakage-card:hover, .trace-dist-card:hover, .trace-details-card:hover {
+  border-color: var(--border-hover);
+}
+
+.donut-chart-legend {
+  margin-top: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+}
+
+.legend-item.clickable {
+  cursor: pointer;
+}
+
+.legend-item.clickable:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.legend-item.active {
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--text-primary);
+  border-color: rgba(59, 130, 246, 0.25);
+}
+
+.legend-color {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 0.5rem;
+}
+
+.legend-scroll-container {
+  width: 100%;
+  max-height: 120px;
+  overflow-y: auto;
+  margin-top: 0.75rem;
+  padding-right: 4px;
+}
+
+.details-header {
+  font-size: 1rem;
+  font-weight: 800;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-primary);
+  margin-bottom: 1rem;
+  text-align: center;
+  width: 100%;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.75rem;
+}
+
+.details-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  width: 100%;
+  margin-bottom: 1.25rem;
+}
+
+.details-metric-box {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 0.5rem;
+  text-align: center;
+}
+
+.details-metric-lbl {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.details-metric-val {
+  font-size: 1.1rem;
+  font-weight: 800;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-primary);
+}
+
+.progress-bar-container {
+  width: 100%;
+  background: var(--bg-tertiary);
+  height: 10px;
+  border-radius: 99px;
+  overflow: hidden;
+  margin: 0.5rem 0;
+  border: 1px solid var(--border-color);
+}
+
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.insights-box {
+  background: rgba(59, 130, 246, 0.03);
+  border: 1px dashed rgba(59, 130, 246, 0.2);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  margin-top: 1.5rem;
+}
+
+.insights-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.insights-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  padding-left: 1rem;
+  margin: 0;
+}
+
+.insights-list li {
+  line-height: 1.4;
+}
+
+

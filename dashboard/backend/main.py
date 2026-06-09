@@ -13,14 +13,29 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+import math
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 RESULTS_DIR = PROJECT_ROOT / "results"
 SCRIPTS_DIR = PROJECT_ROOT / "scripts"
+
+
+def sanitize_floats(obj):
+    """Recursively convert float('nan') or float('inf') to None for JSON compliance."""
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    elif isinstance(obj, dict):
+        return {k: sanitize_floats(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_floats(x) for x in obj]
+    return obj
 
 
 def _parse_summary(item: Path) -> dict:
@@ -116,7 +131,7 @@ def get_overview():
             continue
         rows.append(_extract_row(item, summary))
     rows.sort(key=lambda r: r["created_at"])
-    return rows
+    return sanitize_floats(rows)
 
 
 @app.get("/api/analyses/{analysis_id}/summary")
@@ -125,7 +140,7 @@ def get_summary(analysis_id: str):
     if not summary_path.exists():
         raise HTTPException(status_code=404, detail="Summary not found")
     with open(summary_path, "r") as f:
-        return json.load(f)
+        return sanitize_floats(json.load(f))
 
 
 @app.get("/api/analyses/{analysis_id}/files")
@@ -195,7 +210,7 @@ def get_csv_data(analysis_id: str, csv_path: str):
                 val = avg_rate * (1.0 + 0.3 * math.sin(i * 2 * math.pi / (n_samples / 3)))
                 val = max(0.0, min(1.0, val))
                 rows.append({"index": float(i), "migration_rate": float(round(val, 4))})
-            return rows
+            return sanitize_floats(rows)
         else:
             raise HTTPException(status_code=404, detail=f"CSV not found: {csv_path}")
 
@@ -211,7 +226,7 @@ def get_csv_data(analysis_id: str, csv_path: str):
                 except (ValueError, TypeError):
                     parsed[k] = v
             rows.append(parsed)
-    return rows
+    return sanitize_floats(rows)
 
 
 @app.get("/api/analyses/{analysis_id}/plot/{plot_name}")
