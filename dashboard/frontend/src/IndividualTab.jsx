@@ -169,6 +169,10 @@ export default function IndividualTab({ analysisId, summary }) {
   const autoTuned = summary.auto_tuned_parameters ?? null;
   const downloadCsv = (name) => window.open(`${API_BASE}/analyses/${analysisId}/csv/${name}`, '_blank');
 
+  const fixedTraces = summary.fixed_traces ?? summary.trace_counts?.fixed;
+  const randomTraces = summary.random_traces ?? summary.trace_counts?.random;
+  const totalTraces = (fixedTraces != null && randomTraces != null) ? (fixedTraces + randomTraces) : null;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
 
@@ -177,8 +181,8 @@ export default function IndividualTab({ analysisId, summary }) {
         <div>
           <h2 style={{ fontSize: '1.1rem', fontWeight: 800, letterSpacing: '-0.02em' }}>{analysisId}</h2>
           <div className="text-xs text-muted" style={{ marginTop: '0.25rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-            {summary.fixed_traces != null && <span>Fixed: <b>{summary.fixed_traces}</b> traces</span>}
-            {summary.random_traces != null && <span>Random: <b>{summary.random_traces}</b> traces</span>}
+            {fixedTraces != null && <span>Fixed: <b>{fixedTraces}</b> traces</span>}
+            {randomTraces != null && <span>Random: <b>{randomTraces}</b> traces</span>}
             {summary.tvla_threshold != null && <span>Threshold: <b>|t| = {summary.tvla_threshold}</b></span>}
             {summary.fixed_input && <span>Fixed Input: <b className="mono">{summary.fixed_input}</b></span>}
           </div>
@@ -190,6 +194,44 @@ export default function IndividualTab({ analysisId, summary }) {
           <button className="btn btn-ghost" onClick={() => downloadCsv('tvla_t_stat.csv')}>
             <Download size={14} /> T-Stat CSV
           </button>
+        </div>
+      </div>
+
+      {/* Run Configuration & Trace Statistics */}
+      <div className="page-section">
+        <div className="section-header">
+          <Cpu size={18} color="var(--accent-primary)" />
+          Run Configuration & Trace Statistics
+        </div>
+        <div className="metrics-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+          <MetricCard
+            label="Fixed Traces"
+            icon={<Activity />}
+            iconColor="var(--accent-primary)"
+            value={fixedTraces != null ? fixedTraces.toLocaleString() : '—'}
+            sub="Count of fixed-input traces"
+          />
+          <MetricCard
+            label="Random Traces"
+            icon={<Activity />}
+            iconColor="var(--accent-purple)"
+            value={randomTraces != null ? randomTraces.toLocaleString() : '—'}
+            sub="Count of random-input traces"
+          />
+          <MetricCard
+            label="Total Traces"
+            icon={<BarChart2 />}
+            iconColor="var(--accent-cyan)"
+            value={totalTraces != null ? totalTraces.toLocaleString() : '—'}
+            sub="Total trace count analyzed"
+          />
+          <MetricCard
+            label="Random:Fixed Ratio"
+            icon={<ArrowUpDown />}
+            iconColor="var(--accent-warning)"
+            value={fixedTraces && randomTraces ? (randomTraces / fixedTraces).toFixed(4) : '—'}
+            sub="Rate of random to fixed traces"
+          />
         </div>
       </div>
 

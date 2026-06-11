@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { TrendingUp, Zap, AlertTriangle, CheckCircle, Activity, BarChart2, PieChart, BookOpen, Info } from 'lucide-react';
+import { TrendingUp, Zap, AlertTriangle, CheckCircle, Activity, BarChart2, PieChart, BookOpen, Info, Filter } from 'lucide-react';
 
 const FILTERS = ['raw', 'median', 'moving_avg', 'wavelet', 'regr'];
 const FILTER_LABELS = {
@@ -429,6 +429,13 @@ function RunsTable({ data, selectedId, onSelect }) {
               <td className="mono" style={{ fontSize: '0.7rem' }}>{d.fixed_input ?? '—'}</td>
             </tr>
           ))}
+          {sorted.length === 0 && (
+            <tr>
+              <td colSpan="9" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                No runs match the selected trace count filters.
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>
@@ -439,8 +446,20 @@ function RunsTable({ data, selectedId, onSelect }) {
 // Overview Tab
 // -----------------------------------------------------------
 export default function OverviewTab({ overviewData, selectedId, onSelectId }) {
-  const validRuns = overviewData.filter(d => d.has_new_schema);
-  const totalRuns = overviewData.length;
+  const [filterFixed, setFilterFixed] = useState('All');
+  const [filterRandom, setFilterRandom] = useState('All');
+
+  const uniqueFixed = Array.from(new Set(overviewData.map(d => d.fixed_traces).filter(v => v != null))).sort((a, b) => a - b);
+  const uniqueRandom = Array.from(new Set(overviewData.map(d => d.random_traces).filter(v => v != null))).sort((a, b) => a - b);
+
+  const filteredData = overviewData.filter(d => {
+    const matchFixed = filterFixed === 'All' || d.fixed_traces === Number(filterFixed);
+    const matchRandom = filterRandom === 'All' || d.random_traces === Number(filterRandom);
+    return matchFixed && matchRandom;
+  });
+
+  const validRuns = filteredData.filter(d => d.has_new_schema);
+  const totalRuns = filteredData.length;
   const leakingRuns = validRuns.filter(d => (d.max_t_raw ?? 0) > 4.5).length;
   const avgMaxT = validRuns.length > 0
     ? (validRuns.reduce((s, d) => s + (d.max_t_raw ?? 0), 0) / validRuns.length).toFixed(3)
@@ -451,7 +470,7 @@ export default function OverviewTab({ overviewData, selectedId, onSelectId }) {
 
   // Group runs by trace count
   const groups = {};
-  overviewData.forEach(d => {
+  filteredData.forEach(d => {
     const f = d.fixed_traces;
     const r = d.random_traces;
     
@@ -507,6 +526,10 @@ export default function OverviewTab({ overviewData, selectedId, onSelectId }) {
 
   const [selectedGroupIndex, setSelectedGroupIndex] = useState(0);
 
+  useEffect(() => {
+    setSelectedGroupIndex(0);
+  }, [coloredGroups.length]);
+
   const overallLeaking = validRuns.filter(d => (d.max_t_raw ?? 0) > 4.5).length;
   const overallClean = validRuns.length - overallLeaking;
   const overallLeakPct = validRuns.length > 0 ? (overallLeaking / validRuns.length) * 100 : 0;
@@ -517,6 +540,84 @@ export default function OverviewTab({ overviewData, selectedId, onSelectId }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
+
+      {/* Filters Toolbar */}
+      <div className="glass-panel" style={{ padding: '1rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <Filter size={18} color="var(--accent-primary)" />
+          <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Filter Runs by Trace Count</span>
+        </div>
+        <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Fixed Traces Select */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span className="text-xs text-muted" style={{ fontWeight: 600 }}>Fixed Traces:</span>
+            <select
+              value={filterFixed}
+              onChange={e => setFilterFixed(e.target.value)}
+              style={{
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '0.35rem 1.75rem 0.35rem 0.75rem',
+                color: 'var(--text-primary)',
+                fontSize: '0.8rem',
+                outline: 'none',
+                fontFamily: 'inherit',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="All">All ({uniqueFixed.length} sizes)</option>
+              {uniqueFixed.map(count => (
+                <option key={count} value={count}>{count.toLocaleString()} traces</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Random Traces Select */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span className="text-xs text-muted" style={{ fontWeight: 600 }}>Random Traces:</span>
+            <select
+              value={filterRandom}
+              onChange={e => setFilterRandom(e.target.value)}
+              style={{
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '0.35rem 1.75rem 0.35rem 0.75rem',
+                color: 'var(--text-primary)',
+                fontSize: '0.8rem',
+                outline: 'none',
+                fontFamily: 'inherit',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="All">All ({uniqueRandom.length} sizes)</option>
+              {uniqueRandom.map(count => (
+                <option key={count} value={count}>{count.toLocaleString()} traces</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Clear button if any filter is active */}
+          {(filterFixed !== 'All' || filterRandom !== 'All') && (
+            <button
+              onClick={() => { setFilterFixed('All'); setFilterRandom('All'); }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--accent-primary)',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                padding: 0,
+                textDecoration: 'underline'
+              }}
+            >
+              Reset Filters
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* Stat Bar */}
       <div className="stat-bar">
@@ -716,7 +817,7 @@ export default function OverviewTab({ overviewData, selectedId, onSelectId }) {
           <span className="badge badge-neutral">⋯ Threshold (4.5)</span>
         </div>
         <TrendChart
-          data={overviewData}
+          data={filteredData}
           keyT="max_t_raw"
           keyE="exceedance_pct_raw"
           onClick={(d) => onSelectId(d.id)}
@@ -733,7 +834,7 @@ export default function OverviewTab({ overviewData, selectedId, onSelectId }) {
           Each column is an analysis run. Each row is a filter type. Color intensity = exceedance rate.
           Click any cell to view that run.
         </p>
-        <Heatmap data={overviewData} onSelect={onSelectId} />
+        <Heatmap data={filteredData} onSelect={onSelectId} />
       </div>
 
       {/* All Runs Table */}
@@ -745,7 +846,7 @@ export default function OverviewTab({ overviewData, selectedId, onSelectId }) {
         <p className="section-desc">
           Click any row to inspect in the Individual tab. Click column headers to sort.
         </p>
-        <RunsTable data={overviewData} selectedId={selectedId} onSelect={onSelectId} />
+        <RunsTable data={filteredData} selectedId={selectedId} onSelect={onSelectId} />
       </div>
 
     </div>
