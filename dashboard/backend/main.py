@@ -301,3 +301,320 @@ def run_analysis(req: AnalyzeRequest = None):
         raise HTTPException(status_code=504, detail="Analysis timed out after 10 minutes.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =========================================================================
+# COMPARISONS API
+# =========================================================================
+COMPARISONS_DIR = RESULTS_DIR / "_comparisons"
+
+
+@app.get("/api/comparisons")
+def get_comparisons():
+    """List all available comparison artifacts (CSVs, plots, dataset details)."""
+    if not COMPARISONS_DIR.exists():
+        return {
+            "exists": False,
+            "cross_csvs": [],
+            "cross_plots": [],
+            "datasets": [],
+        }
+
+    cross_csvs = sorted([f.name for f in COMPARISONS_DIR.glob("*.csv") if f.is_file()])
+    cross_plots = sorted([f.name for f in COMPARISONS_DIR.glob("*.png") if f.is_file()])
+
+    datasets = []
+    for d in sorted(COMPARISONS_DIR.iterdir()):
+        if d.is_dir() and not d.name.startswith("."):
+            ds_csvs = sorted([f.name for f in d.glob("*.csv") if f.is_file()])
+            ds_plots = sorted([f.name for f in d.glob("*.png") if f.is_file()])
+            datasets.append({
+                "id": d.name,
+                "csvs": ds_csvs,
+                "plots": ds_plots,
+            })
+
+    return sanitize_floats({
+        "exists": True,
+        "cross_csvs": cross_csvs,
+        "cross_plots": cross_plots,
+        "datasets": datasets,
+    })
+
+
+@app.get("/api/comparisons/cross-csv/{csv_name}")
+def get_cross_csv(csv_name: str):
+    if ".." in csv_name or "/" in csv_name:
+        raise HTTPException(status_code=400, detail="Invalid CSV name")
+    target = COMPARISONS_DIR / csv_name
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="Comparison CSV not found")
+
+    import csv as csv_mod
+    rows = []
+    with open(target, newline="") as f:
+        reader = csv_mod.DictReader(f)
+        for row in reader:
+            parsed = {}
+            for k, v in row.items():
+                if k in ("dataset", "id", "experiment", "condition", "mode", "experiment_condition", "decision_insight", "leakage_verdict"):
+                    parsed[k] = v
+                else:
+                    try:
+                        parsed[k] = float(v)
+                    except (ValueError, TypeError):
+                        parsed[k] = v
+            rows.append(parsed)
+    return sanitize_floats(rows)
+
+
+@app.get("/api/comparisons/download/cross-csv/{csv_name}")
+def download_cross_csv(csv_name: str):
+    if ".." in csv_name or "/" in csv_name:
+        raise HTTPException(status_code=400, detail="Invalid CSV name")
+    target = COMPARISONS_DIR / csv_name
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="Comparison CSV not found")
+    return FileResponse(target, media_type="text/csv", filename=csv_name)
+
+
+@app.get("/api/comparisons/{dataset_id}/csv/{csv_name}")
+def get_dataset_comparison_csv(dataset_id: str, csv_name: str):
+    if ".." in dataset_id or "/" in dataset_id or ".." in csv_name or "/" in csv_name:
+        raise HTTPException(status_code=400, detail="Invalid parameters")
+    target = COMPARISONS_DIR / dataset_id / csv_name
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="Dataset comparison CSV not found")
+
+    import csv as csv_mod
+    rows = []
+    with open(target, newline="") as f:
+        reader = csv_mod.DictReader(f)
+        for row in reader:
+            parsed = {}
+            for k, v in row.items():
+                if k in ("dataset", "id", "experiment", "condition", "mode", "experiment_condition", "decision_insight", "leakage_verdict"):
+                    parsed[k] = v
+                else:
+                    try:
+                        parsed[k] = float(v)
+                    except (ValueError, TypeError):
+                        parsed[k] = v
+            rows.append(parsed)
+    return sanitize_floats(rows)
+
+
+@app.get("/api/comparisons/{dataset_id}/download/{csv_name}")
+def download_dataset_comparison_csv(dataset_id: str, csv_name: str):
+    if ".." in dataset_id or "/" in dataset_id or ".." in csv_name or "/" in csv_name:
+        raise HTTPException(status_code=400, detail="Invalid parameters")
+    target = COMPARISONS_DIR / dataset_id / csv_name
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="Dataset comparison CSV not found")
+    return FileResponse(target, media_type="text/csv", filename=csv_name)
+
+
+@app.get("/api/comparisons/plot/{plot_path:path}")
+def get_comparison_plot(plot_path: str):
+    if ".." in plot_path or plot_path.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid plot path")
+    target = (COMPARISONS_DIR / plot_path).resolve()
+    if not str(target).startswith(str(COMPARISONS_DIR.resolve())):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="Plot not found")
+    return FileResponse(target)
+
+
+class CompareRunRequest(BaseModel):
+    mode: str = "fixed"  # fixed | random | both
+    dataset_ids: Optional[list[str]] = []
+    no_full_report: bool = False
+
+
+@app.post("/api/comparisons/run")
+def run_comparison(req: CompareRunRequest):
+    script_path = SCRIPTS_DIR / "compare_results.py"
+    if not script_path.exists():
+        raise HTTPException(status_code=500, detail="compare_results.py not found")
+
+    cmd = ["python3", str(script_path), "--mode", req.mode]
+    if req.no_full_report:
+        cmd.append("--no-full-report")
+    if req.dataset_ids and len(req.dataset_ids) > 0:
+        cmd.append("--datasets")
+        cmd.extend(req.dataset_ids)
+
+    try:
+        process = subprocess.run(
+            cmd,
+            cwd=str(PROJECT_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
+        if process.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"Comparison failed: {process.stderr}")
+        return {
+            "status": "success",
+            "mode": req.mode,
+            "stdout": process.stdout
+        }
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Comparison timed out")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =========================================================================
+# CONTROL TVLA API (Fixed vs Fixed / Random vs Random)
+# =========================================================================
+CONTROL_DIR = RESULTS_DIR / "_control_tvla"
+
+
+class ControlTvlaRequest(BaseModel):
+    mode: str = "fixed"  # fixed | random
+    dataset1: str
+    dataset2: str
+    median_window: Optional[int] = 5
+    moving_average_window: Optional[int] = 5
+    savgol_window: Optional[int] = 15
+
+
+@app.get("/api/control-tvla/runs")
+def list_control_runs():
+    """List all calculated Fixed-vs-Fixed and Random-vs-Random control TVLA runs."""
+    if not CONTROL_DIR.exists():
+        return []
+    runs = []
+    for d in sorted(CONTROL_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        if d.is_dir() and not d.name.startswith("."):
+            summary_p = d / "summary.json"
+            summary_data = None
+            if summary_p.exists():
+                try:
+                    with open(summary_p) as f:
+                        summary_data = json.load(f)
+                except Exception:
+                    pass
+            csvs = sorted([f.name for f in d.glob("*.csv") if f.is_file()])
+            plots = sorted([f.name for f in (d / "plots").glob("*.png") if f.is_file()]) if (d / "plots").exists() else []
+            runs.append({
+                "id": d.name,
+                "summary": sanitize_floats(summary_data),
+                "csvs": csvs,
+                "plots": plots,
+                "created_at": d.stat().st_mtime
+            })
+    return runs
+
+
+@app.get("/api/control-tvla/{run_id}/summary")
+def get_control_summary(run_id: str):
+    if ".." in run_id or "/" in run_id:
+        raise HTTPException(status_code=400, detail="Invalid run ID")
+    summary_path = CONTROL_DIR / run_id / "summary.json"
+    if not summary_path.exists():
+        raise HTTPException(status_code=404, detail="Control summary not found")
+    with open(summary_path) as f:
+        return sanitize_floats(json.load(f))
+
+
+@app.get("/api/control-tvla/{run_id}/csv/{csv_name}")
+def get_control_csv(run_id: str, csv_name: str):
+    if ".." in run_id or "/" in run_id or ".." in csv_name or "/" in csv_name:
+        raise HTTPException(status_code=400, detail="Invalid parameters")
+    target = CONTROL_DIR / run_id / csv_name
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="CSV not found")
+
+    import csv as csv_mod
+    rows = []
+    with open(target, newline="") as f:
+        reader = csv_mod.DictReader(f)
+        for row in reader:
+            parsed = {}
+            for k, v in row.items():
+                if k in ("experiment", "verdict", "condition", "mode"):
+                    parsed[k] = v
+                else:
+                    try:
+                        parsed[k] = float(v)
+                    except (ValueError, TypeError):
+                        parsed[k] = v
+            rows.append(parsed)
+    return sanitize_floats(rows)
+
+
+@app.get("/api/control-tvla/{run_id}/download/{csv_name}")
+def download_control_csv(run_id: str, csv_name: str):
+    if ".." in run_id or "/" in run_id or ".." in csv_name or "/" in csv_name:
+        raise HTTPException(status_code=400, detail="Invalid parameters")
+    target = CONTROL_DIR / run_id / csv_name
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="CSV not found")
+    return FileResponse(target, media_type="text/csv", filename=csv_name)
+
+
+@app.get("/api/control-tvla/{run_id}/plot/{plot_name}")
+def get_control_plot(run_id: str, plot_name: str):
+    if ".." in run_id or "/" in run_id or ".." in plot_name or "/" in plot_name:
+        raise HTTPException(status_code=400, detail="Invalid parameters")
+    target = CONTROL_DIR / run_id / "plots" / plot_name
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="Plot not found")
+    return FileResponse(target)
+
+
+@app.post("/api/control-tvla/run")
+def calculate_control_tvla(req: ControlTvlaRequest):
+    script_path = SCRIPTS_DIR / "control_tvla.py"
+    if not script_path.exists():
+        raise HTTPException(status_code=500, detail="control_tvla.py script not found")
+
+    cmd = [
+        "python3", str(script_path),
+        "--mode", req.mode,
+        "--dataset1", req.dataset1,
+        "--dataset2", req.dataset2,
+        "--median-window", str(req.median_window or 5),
+        "--moving-average-window", str(req.moving_average_window or 5),
+        "--savgol-window", str(req.savgol_window or 15),
+    ]
+
+    try:
+        process = subprocess.run(
+            cmd,
+            cwd=str(PROJECT_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=180
+        )
+        if process.returncode != 0:
+            err_text = process.stderr or process.stdout
+            raise HTTPException(status_code=400, detail=err_text.strip())
+
+        run_name = f"control_{req.mode}_{req.dataset1}_vs_{req.dataset2}"
+        summary_path = CONTROL_DIR / run_name / "summary.json"
+        summary_data = None
+        if summary_path.exists():
+            try:
+                with open(summary_path) as f:
+                    summary_data = json.load(f)
+            except Exception:
+                pass
+
+        return {
+            "status": "success",
+            "run_id": run_name,
+            "stdout": process.stdout,
+            "summary": sanitize_floats(summary_data)
+        }
+    except HTTPException:
+        raise
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Control TVLA calculation timed out")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+

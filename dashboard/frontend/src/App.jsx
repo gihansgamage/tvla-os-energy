@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Activity, BarChart2, Play, Database, ChevronDown,
-  LayoutDashboard, Search, Zap
+  LayoutDashboard, Search, Zap, GitCompare
 } from 'lucide-react';
 import OverviewTab from './OverviewTab';
 import IndividualTab from './IndividualTab';
 import RunAnalysisTab from './RunAnalysisTab';
+import CompareTab from './CompareTab';
 
 const API_BASE = 'http://localhost:8000/api';
 
@@ -14,9 +15,10 @@ function formatDate(ts) {
 }
 
 const TABS = [
-  { id: 'overview',    label: 'Overview',      icon: LayoutDashboard },
-  { id: 'individual',  label: 'Individual Run', icon: Search },
-  { id: 'run',         label: 'Run Analysis',   icon: Zap },
+  { id: 'overview',    label: 'Overview',       icon: LayoutDashboard },
+  { id: 'individual',  label: 'Individual Run',  icon: Search },
+  { id: 'compare',     label: 'Compare Runs',    icon: GitCompare },
+  { id: 'run',         label: 'Run Analysis',    icon: Zap },
 ];
 
 export default function App() {
@@ -193,6 +195,9 @@ export default function App() {
               analysisId={selectedId}
               summary={summary}
             />
+          )}
+          {activeTab === 'compare' && (
+            <CompareTab />
           )}
           {activeTab === 'run' && (
             <RunAnalysisTab onSuccess={() => { fetchAll(); setActiveTab('overview'); }} />

@@ -19,8 +19,7 @@ If you are developing a production application, we recommend using TypeScript wi
 # Navigate to the backend directory
 cd dashboard/backend
 
-# Activate your existing python virtual environment
-source ../../.venv/bin/activate
+# Activate your existing python virtual environme
 
 # Start the server (runs on http://localhost:8000)
 uvicorn main:app --reload
